@@ -1,0 +1,10 @@
+package com.salon.audit;
+
+public enum AuditAction {
+    CREATE_SERVICE,
+    CREATE_BOOKING,
+    CANCEL_BOOKING,
+    COMPLETE_BOOKING,
+    CREATE_INVOICE   // ✅ ADD THIS
+}
+
