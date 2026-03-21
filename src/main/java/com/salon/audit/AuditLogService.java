@@ -1,6 +1,7 @@
 package com.salon.audit;
 
 import com.salon.security.SecurityUtil;
+import com.salon.service.SalonService;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,24 +11,25 @@ import org.springframework.data.domain.Pageable;
 public class AuditLogService {
 
     private final AuditLogRepository repository;
+    private final SalonService salonService;
 
-    public AuditLogService(AuditLogRepository repository) {
+    public AuditLogService(AuditLogRepository repository, SalonService salonService) {
         this.repository = repository;
+        this.salonService = salonService;
     }
 
     public void log(AuditAction action, String description) {
 
         AuditLog log = new AuditLog();
         log.setUserId(SecurityUtil.getCurrentUserId());
-        log.setSalonId(SecurityUtil.getCurrentSalonId());
+        log.setSalonId(salonService.getCurrentSalon().getId());
         log.setAction(action);
         log.setDescription(description);
 
         repository.save(log);
     }
     public Page<AuditLogResponse> getAuditLogs(Pageable pageable) {
-
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        Long salonId = salonService.getCurrentSalon().getId();
 
         return repository.findBySalonId(salonId, pageable)
                 .map(log -> new AuditLogResponse(

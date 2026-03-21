@@ -22,7 +22,7 @@ public class CustomerRegisterRequest {
 	    @NotBlank(message = "Phone is required")
 	    private String phone;
 
-	    @NotNull(message = "Salonname is required")
+	    /** Salon name - optional for single-tenant (uses default from config) */
 	    private String salonName;
 	    
 	    public String getFullName() { return fullName; }

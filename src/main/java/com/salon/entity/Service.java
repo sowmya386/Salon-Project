@@ -19,9 +19,8 @@ public class Service {
 
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "salon_id", nullable = false)
-    private Salon salon;
+    @Column(name = "salon_name", nullable = false)
+    private String salonName;
 
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -66,12 +65,12 @@ public class Service {
         this.active = active;
     }
 
-    public Salon getSalon() {
-        return salon;
+    public String getSalonName() {
+        return salonName;
     }
 
-    public void setSalon(Salon salon) {
-        this.salon = salon;
+    public void setSalonName(String salonName) {
+        this.salonName = salonName;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -4,7 +4,12 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "bookings")
+@Table(name = "bookings", indexes = {
+        @Index(name = "idx_bookings_salon_name", columnList = "salon_name"),
+        @Index(name = "idx_bookings_customer_id", columnList = "customer_id"),
+        @Index(name = "idx_bookings_status", columnList = "status"),
+        @Index(name = "idx_bookings_appointment_time", columnList = "appointment_time")
+})
 public class Booking {
 
     @Id
@@ -22,9 +27,8 @@ public class Booking {
     private Service service;
 
     // tenant boundary
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "salon_id", nullable = false)
-    private Salon salon;
+    @Column(name = "salon_name", nullable = false)
+    private String salonName;
 
     // when
     private LocalDateTime appointmentTime;
@@ -58,12 +62,12 @@ public class Booking {
         this.service = service;
     }
 
-    public Salon getSalon() {
-        return salon;
+    public String getSalonName() {
+        return salonName;
     }
 
-    public void setSalon(Salon salon) {
-        this.salon = salon;
+    public void setSalonName(String salonName) {
+        this.salonName = salonName;
     }
 
     public LocalDateTime getAppointmentTime() {

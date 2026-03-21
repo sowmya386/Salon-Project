@@ -11,9 +11,9 @@ import com.salon.dto.ProductResponse;
 import com.salon.dto.ServiceRequest;
 import com.salon.dto.ServiceResponse;
 import com.salon.dto.TopItemResponse;
-import com.salon.security.SecurityUtil;
 import com.salon.service.BillingService;
 import com.salon.service.BookingService;
+import com.salon.service.SalonService;
 import com.salon.service.DashboardService;
 import com.salon.service.ProductService;
 import com.salon.service.ReengagementService;
@@ -46,6 +46,7 @@ public class AdminController {
     private final BillingService billingService;
     private final ReengagementService reengagementService;
     private final DashboardService dashboardService;
+    private final SalonService salonService;
 
     public AdminController(UserService userService,
                            ServiceService serviceService,
@@ -54,7 +55,8 @@ public class AdminController {
                            ProductService productService,
                            BillingService billingService,
                            ReengagementService reengagementService,
-                           DashboardService dashboardService) {
+                           DashboardService dashboardService,
+                           SalonService salonService) {
     	
         this.userService = userService;
         this.serviceService = serviceService;
@@ -64,6 +66,7 @@ public class AdminController {
         this.billingService = billingService;
         this.reengagementService=reengagementService;
         this.dashboardService = dashboardService;
+        this.salonService = salonService;
     }
 
     @PostMapping("/customers")
@@ -71,8 +74,7 @@ public class AdminController {
     public ResponseEntity<?> registerCustomerByAdmin(
             @Valid @RequestBody CustomerRegisterRequest request) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        userService.registerCustomerByAdmin(request, salonId);
+        userService.registerCustomerByAdmin(request, salonService.getCurrentSalon());
         return ResponseEntity.ok("Customer registered");
     }
 

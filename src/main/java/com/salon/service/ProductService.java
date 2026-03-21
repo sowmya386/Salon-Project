@@ -5,8 +5,8 @@ import com.salon.dto.ProductResponse;
 import com.salon.entity.Product;
 import com.salon.entity.Salon;
 import com.salon.repository.ProductRepository;
-import com.salon.repository.SalonRepository;
-import com.salon.security.SecurityUtil;
+import com.salon.audit.AuditLogService;
+import com.salon.audit.AuditAction;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -15,27 +15,28 @@ import org.springframework.stereotype.Service;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final SalonRepository salonRepository;
+    private final SalonService salonService;
+    private final AuditLogService auditLogService;
 
     public ProductService(ProductRepository productRepository,
-                          SalonRepository salonRepository) {
+                          SalonService salonService,
+                          AuditLogService auditLogService) {
         this.productRepository = productRepository;
-        this.salonRepository = salonRepository;
+        this.salonService = salonService;
+        this.auditLogService = auditLogService;
     }
 
     // ADMIN
     public ProductResponse createProduct(ProductRequest request) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        Salon salon = salonService.getCurrentSalon();
 
         Product product = new Product();
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setPrice(request.getPrice());
         product.setStock(request.getStock());
-        product.setSalon(salon);
+        product.setSalonName(salon.getName());
 
         product = productRepository.save(product);
 
@@ -51,12 +52,10 @@ public class ProductService {
     // CUSTOMER + ADMIN
     public Page<ProductResponse> getActiveProducts(Pageable pageable) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        String salonName = salonService.getCurrentSalon().getName();
 
         return productRepository
-                .findBySalon_IdAndActiveTrue(salonId, pageable)
+                .findBySalonNameAndActiveTrue(salonName, pageable)
                 .map(p -> new ProductResponse(
                         p.getId(),
                         p.getName(),
@@ -64,5 +63,29 @@ public class ProductService {
                         p.getPrice(),
                         p.getStock()
                 ));
+    }
+
+    // ADMIN ONLY: soft-delete by deactivating product
+    public ProductResponse deactivateProduct(Long productId) {
+        Salon salon = salonService.getCurrentSalon();
+
+        Product product = productRepository.findByIdAndSalonName(productId, salon.getName())
+                .orElseThrow(() -> new RuntimeException("Product not found in this salon"));
+
+        product.setActive(false);
+        product = productRepository.save(product);
+
+        auditLogService.log(
+                AuditAction.DEACTIVATE_PRODUCT,
+                "Admin deactivated product ID " + product.getId()
+        );
+
+        return new ProductResponse(
+                product.getId(),
+                product.getName(),
+                product.getDescription(),
+                product.getPrice(),
+                product.getStock()
+        );
     }
 }

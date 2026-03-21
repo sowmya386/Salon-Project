@@ -16,26 +16,26 @@ import java.time.LocalDateTime;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-	 List<Booking> findByCustomerIdAndSalonId(Long customerId, Long salonId);
+	 List<Booking> findByCustomer_IdAndSalonName(Long customerId, String salonName);
 
-	    Page<Booking> findByCustomerIdAndSalonId(
+	    Page<Booking> findByCustomer_IdAndSalonName(
 	            Long customerId,
-	            Long salonId,
+	            String salonName,
 	            Pageable pageable
 	    );
 
 	    // ADMIN — list salon bookings
-	    List<Booking> findBySalonId(Long salonId);
+	    List<Booking> findBySalonName(String salonName);
 
-	    Page<Booking> findBySalonId(Long salonId, Pageable pageable);
+	    Page<Booking> findBySalonName(String salonName, Pageable pageable);
 
 	    // COMMON — find single booking inside salon
-	    Optional<Booking> findByIdAndSalonId(Long bookingId, Long salonId);
+	    Optional<Booking> findByIdAndSalonName(Long bookingId, String salonName);
 	   
     
-	    Optional<Booking> findTopByCustomer_IdAndSalon_IdOrderByAppointmentTimeDesc(
+	    Optional<Booking> findTopByCustomer_IdAndSalonNameOrderByAppointmentTimeDesc(
 	            Long customerId,
-	            Long salonId
+	            String salonName
 	    );
      @Query("""
     	        SELECT 
@@ -46,24 +46,43 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     	            MAX(b.appointmentTime),
     	            COUNT(b)
     	        FROM Booking b
-    	        WHERE b.salon.id = :salonId
+    	        WHERE b.salonName = :salonName
     	          AND b.status = 'COMPLETED'
     	        GROUP BY b.customer.id, b.customer.fullName, b.customer.email, b.customer.phone
     	        HAVING MAX(b.appointmentTime) < :cutoffDate
     	    """)
     	    Page<Object[]> findInactiveCustomers(
-    	            Long salonId,
-    	            LocalDateTime cutoffDate,
+    	            String salonName,
+    	            @org.springframework.data.repository.query.Param("cutoffDate") LocalDateTime cutoffDate,
     	            Pageable pageable
     	    );
+
+	    // ADMIN — directory of customers with booking stats
+	    @Query("""
+	            SELECT
+	                b.customer.id,
+	                b.customer.fullName,
+	                b.customer.email,
+	                b.customer.phone,
+	                MAX(b.appointmentTime),
+	                COUNT(b)
+	            FROM Booking b
+	            WHERE b.salonName = :salonName
+	              AND b.status = 'COMPLETED'
+	            GROUP BY b.customer.id, b.customer.fullName, b.customer.email, b.customer.phone
+	            """)
+	    Page<Object[]> findCustomerStats(
+	            String salonName,
+	            Pageable pageable
+	    );
     	
-    	    long countBySalon_IdAndAppointmentTimeBetween(
-    	            Long salonId,
+    	    long countBySalonNameAndAppointmentTimeBetween(
+    	            String salonName,
     	            LocalDateTime start,
     	            LocalDateTime end
     	    );
 
-    	    long countBySalon_IdAndStatus(Long salonId, BookingStatus status);
+    	    long countBySalonNameAndStatus(String salonName, BookingStatus status);
 
     
 }

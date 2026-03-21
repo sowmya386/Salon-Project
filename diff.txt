@@ -1,0 +1,2500 @@
+﻿diff --git a/SUPABASE_SETUP.md b/SUPABASE_SETUP.md
+new file mode 100644
+index 0000000..d9a211a
+--- /dev/null
++++ b/SUPABASE_SETUP.md
+@@ -0,0 +1,78 @@
++# Supabase + Google OAuth Setup
++
++This guide explains how to connect Google sign-in with Supabase and use it with this backend.
++
++## 1. Supabase Dashboard Setup
++
++1. Go to [Supabase Dashboard](https://supabase.com/dashboard) ΓåÆ your project
++2. **Enable Google OAuth**
++   - Authentication ΓåÆ Providers ΓåÆ Google ΓåÆ Enable
++   - Add your **Google Client ID** and **Client Secret** from [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
++   - Add redirect URI: `https://<your-project-ref>.supabase.co/auth/v1/callback`
++
++3. **Get JWT Secret**
++   - Settings ΓåÆ API ΓåÆ **JWT Secret** (copy this value)
++
++## 2. Google Cloud Console Setup
++
++1. Create OAuth credentials (Web application)
++2. Add authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`
++3. Add authorized JavaScript origins: `http://localhost:5173` (dev), your production URL
++4. Configure OAuth consent screen with scopes: `openid`, `userinfo.email`, `userinfo.profile`
++
++## 3. Backend Configuration
++
++Add to `application.properties` or set environment variable:
++
++```properties
++# From Supabase: Settings ΓåÆ API ΓåÆ JWT Secret
++supabase.jwt-secret=your-jwt-secret-here
++```
++
++Or use environment variable (recommended for production):
++
++```bash
++SUPABASE_JWT_SECRET=your-jwt-secret-here
++```
++
++## 4. Frontend Integration
++
++Example with Supabase JS client:
++
++```javascript
++import { createClient } from '@supabase/supabase-js'
++
++const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
++
++// Sign in with Google
++const { data, error } = await supabase.auth.signInWithOAuth({ provider: 'google' })
++// User is redirected to Google, then back to your app
++
++// After redirect, get session
++const { data: { session } } = await supabase.auth.getSession()
++
++if (session?.access_token) {
++  // Exchange for salon JWT
++  const res = await fetch('http://localhost:8081/api/auth/supabase/exchange', {
++    method: 'POST',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify({
++      accessToken: session.access_token,
++      salonName: 'Your Salon Name',  // required for new customers
++      role: 'ROLE_CUSTOMER'          // or 'ROLE_ADMIN'
++    })
++  })
++  const { token } = await res.json()
++  // Use token for API calls (Authorization: Bearer <token>)
++}
++```
++
++## 5. API Endpoint
++
++| Endpoint | Method | Body | Description |
++|----------|--------|------|-------------|
++| `/api/auth/supabase/exchange` | POST | `{ accessToken, salonName?, role? }` | Exchange Supabase JWT for salon JWT |
++
++- **accessToken**: Required. From `session.access_token` after Google sign-in
++- **salonName**: Required for **new** users (to associate with a salon)
++- **role**: `ROLE_CUSTOMER` (default) or `ROLE_ADMIN`
+diff --git a/pom.xml b/pom.xml
+index 0e024d9..f25134e 100644
+--- a/pom.xml
++++ b/pom.xml
+@@ -27,7 +27,7 @@
+ 		<url/>
+ 	</scm>
+ 	<properties>
+-		<java.version>21</java.version>
++		<java.version>20</java.version>
+ 	</properties>
+ 	<dependencies>
+ 		<dependency>
+@@ -114,7 +114,34 @@
+ 		   <artifactId>spring-boot-starter-actuator</artifactId>
+ 		   <optional>true</optional>
+ 		</dependency>
+-
++		<dependency>
++			<groupId>org.flywaydb</groupId>
++			<artifactId>flyway-core</artifactId>
++		</dependency>
++		<dependency>
++			<groupId>org.flywaydb</groupId>
++			<artifactId>flyway-database-postgresql</artifactId>
++		</dependency>
++		<dependency>
++			<groupId>com.bucket4j</groupId>
++			<artifactId>bucket4j-core</artifactId>
++			<version>8.10.1</version>
++		</dependency>
++		<dependency>
++			<groupId>org.springframework.boot</groupId>
++			<artifactId>spring-boot-starter-cache</artifactId>
++		</dependency>
++		<!-- Caffeine: in-memory cache, zero cost, no external service -->
++		<dependency>
++			<groupId>com.github.ben-manes.caffeine</groupId>
++			<artifactId>caffeine</artifactId>
++		</dependency>
++		<!-- Stripe: low-cost payments, 2.9%+$0.30 per transaction, no monthly fee -->
++		<dependency>
++			<groupId>com.stripe</groupId>
++			<artifactId>stripe-java</artifactId>
++			<version>28.2.0</version>
++		</dependency>
+ 
+ 	</dependencies>
+ 	
+diff --git a/src/main/java/com/salon/audit/AuditAction.java b/src/main/java/com/salon/audit/AuditAction.java
+index 227624c..d5ce548 100644
+--- a/src/main/java/com/salon/audit/AuditAction.java
++++ b/src/main/java/com/salon/audit/AuditAction.java
+@@ -5,6 +5,8 @@ public enum AuditAction {
+     CREATE_BOOKING,
+     CANCEL_BOOKING,
+     COMPLETE_BOOKING,
+-    CREATE_INVOICE   // Γ£à ADD THIS
++    CREATE_INVOICE,
++    DEACTIVATE_SERVICE,
++    DEACTIVATE_PRODUCT
+ }
+ 
+diff --git a/src/main/java/com/salon/audit/AuditLogService.java b/src/main/java/com/salon/audit/AuditLogService.java
+index b010133..b2bfd70 100644
+--- a/src/main/java/com/salon/audit/AuditLogService.java
++++ b/src/main/java/com/salon/audit/AuditLogService.java
+@@ -1,6 +1,7 @@
+ package com.salon.audit;
+ 
+ import com.salon.security.SecurityUtil;
++import com.salon.service.SalonService;
+ import org.springframework.stereotype.Service;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+@@ -10,24 +11,25 @@ import org.springframework.data.domain.Pageable;
+ public class AuditLogService {
+ 
+     private final AuditLogRepository repository;
++    private final SalonService salonService;
+ 
+-    public AuditLogService(AuditLogRepository repository) {
++    public AuditLogService(AuditLogRepository repository, SalonService salonService) {
+         this.repository = repository;
++        this.salonService = salonService;
+     }
+ 
+     public void log(AuditAction action, String description) {
+ 
+         AuditLog log = new AuditLog();
+         log.setUserId(SecurityUtil.getCurrentUserId());
+-        log.setSalonId(SecurityUtil.getCurrentSalonId());
++        log.setSalonId(salonService.getCurrentSalon().getId());
+         log.setAction(action);
+         log.setDescription(description);
+ 
+         repository.save(log);
+     }
+     public Page<AuditLogResponse> getAuditLogs(Pageable pageable) {
+-
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return repository.findBySalonId(salonId, pageable)
+                 .map(log -> new AuditLogResponse(
+diff --git a/src/main/java/com/salon/config/DataInitializer.java b/src/main/java/com/salon/config/DataInitializer.java
+index 56b4dd2..16b324f 100644
+--- a/src/main/java/com/salon/config/DataInitializer.java
++++ b/src/main/java/com/salon/config/DataInitializer.java
+@@ -2,14 +2,19 @@ package com.salon.config;
+ 
+ import com.salon.entity.ApprovalStatus;
+ import com.salon.entity.Role;
++import com.salon.entity.Salon;
++import com.salon.entity.SubscriptionPlan;
+ import com.salon.entity.User;
+ import com.salon.entity.UserRole;
+ import com.salon.repository.RoleRepository;
++import com.salon.repository.SalonRepository;
++import com.salon.repository.SubscriptionPlanRepository;
+ import com.salon.repository.UserRepository;
+ import com.salon.repository.UserRoleRepository;
+ 
+ import java.time.LocalDateTime;
+ 
++import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.boot.CommandLineRunner;
+ import org.springframework.context.annotation.Bean;
+ import org.springframework.context.annotation.Configuration;
+@@ -18,47 +23,96 @@ import org.springframework.security.crypto.password.PasswordEncoder;
+ @Configuration
+ public class DataInitializer {
+ 
+-    
++    @Value("${salon.default-name:Default}")
++    private String defaultSalonName;
++
++    @Bean
++    CommandLineRunner initDefaultSalon(SalonRepository salonRepository) {
++        return args -> {
++            if (salonRepository.findByNameIgnoreCase(defaultSalonName).isEmpty()) {
++                Salon salon = new Salon();
++                salon.setName(defaultSalonName);
++                salon.setApprovalStatus(ApprovalStatus.APPROVED);
++                salon.setActive(true);
++                salonRepository.save(salon);
++            }
++        };
++    }
++
++    @Bean
++    CommandLineRunner initSubscriptionPlans(SubscriptionPlanRepository planRepository) {
++        return args -> {
++            if (planRepository.findByNameIgnoreCase("BASIC").isEmpty()) {
++                SubscriptionPlan basic = new SubscriptionPlan();
++                basic.setName("BASIC");
++                basic.setDescription("Essential for small salons");
++                basic.setMonthlyPrice(49.0);
++                basic.setMaxStaff(3);
++                basic.setMaxCustomers(200);
++                planRepository.save(basic);
++
++                SubscriptionPlan pro = new SubscriptionPlan();
++                pro.setName("PRO");
++                pro.setDescription("For growing salons");
++                pro.setMonthlyPrice(99.0);
++                pro.setMaxStaff(10);
++                pro.setMaxCustomers(1000);
++                pro.setLoyaltyProgram(true);
++                pro.setAdvancedAnalytics(true);
++                planRepository.save(pro);
++
++                SubscriptionPlan enterprise = new SubscriptionPlan();
++                enterprise.setName("ENTERPRISE");
++                enterprise.setDescription("Full features");
++                enterprise.setMonthlyPrice(199.0);
++                enterprise.setMaxStaff(50);
++                enterprise.setMaxCustomers(10000);
++                enterprise.setLoyaltyProgram(true);
++                enterprise.setAdvancedAnalytics(true);
++                enterprise.setSmsNotifications(true);
++                enterprise.setApiAccess(true);
++                planRepository.save(enterprise);
++            }
++        };
++    }
++
+     @Bean
+     CommandLineRunner initSuperAdmin(
+             UserRepository userRepository,
+             RoleRepository roleRepository,
+             PasswordEncoder passwordEncoder,
+             UserRoleRepository userRoleRepository) {
+-    	
+ 
+         return args -> {
+ 
++            // Γ£à Create all roles first if they don't exist
++            Role superAdminRole = roleRepository.findByName("ROLE_SUPER_ADMIN")
++                    .orElseGet(() -> roleRepository.save(new Role("ROLE_SUPER_ADMIN")));
++
++            if (roleRepository.findByName("ROLE_CUSTOMER").isEmpty()) {
++                roleRepository.save(new Role("ROLE_CUSTOMER"));
++            }
++            if (roleRepository.findByName("ROLE_ADMIN").isEmpty()) {
++                roleRepository.save(new Role("ROLE_ADMIN"));
++            }
++            if (roleRepository.findByName("ROLE_SALON_OWNER").isEmpty()) {
++                roleRepository.save(new Role("ROLE_SALON_OWNER"));
++            }
++
++            // Γ£à Then create super admin user if not exists
+             if (userRepository.findByEmail("systemadmin@gmail.com").isPresent()) {
+                 return;
+             }
+ 
+-            Role superAdminRole = roleRepository.findByName("ROLE_SUPER_ADMIN")
+-                    .orElseThrow();
+-
+             User superAdmin = new User();
+             superAdmin.setFullName("System Admin");
+             superAdmin.setEmail("systemadmin@gmail.com");
+-            superAdmin.setPassword(passwordEncoder.encode("admin123")); // Γ£à REAL PASSWORD
++            superAdmin.setPassword(passwordEncoder.encode("admin123"));
+             superAdmin.setActive(true);
+             superAdmin.setApprovalStatus(ApprovalStatus.APPROVED);
+             superAdmin.setCreatedAt(LocalDateTime.now());
+-
+             userRepository.save(superAdmin);
+-
+             userRoleRepository.save(new UserRole(superAdmin, superAdminRole));
+-            
+-            if (roleRepository.findByName("ROLE_CUSTOMER").isEmpty()) {
+-                roleRepository.save(new Role("ROLE_CUSTOMER"));
+-            }
+-
+-            if (roleRepository.findByName("ROLE_ADMIN").isEmpty()) {
+-                roleRepository.save(new Role("ROLE_ADMIN"));
+-            }
+-
+-            if (roleRepository.findByName("ROLE_SALON_OWNER").isEmpty()) {
+-                roleRepository.save(new Role("ROLE_SALON_OWNER"));
+-            }
+         };
+     }
+-}
++}
+\ No newline at end of file
+diff --git a/src/main/java/com/salon/config/SecurityConfig.java b/src/main/java/com/salon/config/SecurityConfig.java
+index 199c3eb..9a45ea9 100644
+--- a/src/main/java/com/salon/config/SecurityConfig.java
++++ b/src/main/java/com/salon/config/SecurityConfig.java
+@@ -7,8 +7,11 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
+ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+ import org.springframework.security.web.SecurityFilterChain;
+ import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+-
++import org.springframework.web.cors.CorsConfiguration;
++import org.springframework.web.cors.CorsConfigurationSource;
++import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+ import com.salon.security.JwtAuthFilter;
++import java.util.List;
+ 
+ @Configuration
+ @EnableMethodSecurity(prePostEnabled = true)
+@@ -22,19 +25,17 @@ public class SecurityConfig {
+ 
+     @Bean
+     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+-
+         http
++            .cors(cors -> cors.configurationSource(corsConfigurationSource())) // Γ¼à∩╕Å ADD THIS
+             .csrf(csrf -> csrf.disable())
+             .formLogin(form -> form.disable())
+             .httpBasic(basic -> basic.disable())
+             .authorizeHttpRequests(auth -> auth
+-
+-                // Γ£à PUBLIC ENDPOINTS
+-            		 .requestMatchers(
+-            			        "/swagger-ui.html",
+-            			        "/swagger-ui/**",
+-            			        "/v3/api-docs/**"
+-            			    ).permitAll()
++                .requestMatchers(
++                    "/swagger-ui.html",
++                    "/swagger-ui/**",
++                    "/v3/api-docs/**"
++                ).permitAll()
+                 .requestMatchers(HttpMethod.POST, "/api/auth/admin/register").permitAll()
+                 .requestMatchers(HttpMethod.POST, "/api/auth/admin/login").permitAll()
+                 .requestMatchers(HttpMethod.POST, "/api/auth/customers/login").permitAll()
+@@ -43,15 +44,31 @@ public class SecurityConfig {
+                 .requestMatchers(HttpMethod.POST, "/api/auth/reset-password").permitAll()
+                 .requestMatchers(HttpMethod.POST, "/api/salons").permitAll()
+                 .requestMatchers(HttpMethod.POST, "/api/bot/chat").permitAll()
++                // Public catalog for customer browsing
++                .requestMatchers(HttpMethod.GET, "/api/customers/services").permitAll()
++                .requestMatchers(HttpMethod.GET, "/api/customers/products").permitAll()
+                 .requestMatchers("/api/super-admin/**").hasRole("SUPER_ADMIN")
+                 .requestMatchers(HttpMethod.POST, "/api/auth/super-admin/login").permitAll()
+-
+-
+-                // ≡ƒöÉ EVERYTHING ELSE NEEDS AUTH
++                .requestMatchers(HttpMethod.POST, "/api/auth/supabase/exchange").permitAll()
++                .requestMatchers(HttpMethod.GET, "/api/payments/plans").permitAll()
+                 .anyRequest().authenticated()
+             )
+             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+ 
+         return http.build();
+     }
+-}
++
++    // Γ¼à∩╕Å ADD THIS METHOD
++    @Bean
++    public CorsConfigurationSource corsConfigurationSource() {
++        CorsConfiguration config = new CorsConfiguration();
++        config.setAllowedOrigins(List.of("http://localhost:5173")); // your React URL
++        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
++        config.setAllowedHeaders(List.of("*"));
++        config.setAllowCredentials(true);
++
++        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
++        source.registerCorsConfiguration("/**", config);
++        return source;
++    }
++}
+\ No newline at end of file
+diff --git a/src/main/java/com/salon/config/SupabaseConfig.java b/src/main/java/com/salon/config/SupabaseConfig.java
+new file mode 100644
+index 0000000..b654d27
+--- /dev/null
++++ b/src/main/java/com/salon/config/SupabaseConfig.java
+@@ -0,0 +1,30 @@
++package com.salon.config;
++
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.context.annotation.Configuration;
++
++/**
++ * Configuration for Supabase integration (Auth, Google OAuth).
++ * Configure in application.properties or via environment variables.
++ */
++@Configuration
++public class SupabaseConfig {
++
++    @Value("${supabase.url:}")
++    private String url;
++
++    @Value("${supabase.jwt-secret:}")
++    private String jwtSecret;
++
++    public String getUrl() {
++        return url;
++    }
++
++    public String getJwtSecret() {
++        return jwtSecret;
++    }
++
++    public boolean isConfigured() {
++        return url != null && !url.isBlank() && jwtSecret != null && !jwtSecret.isBlank();
++    }
++}
+diff --git a/src/main/java/com/salon/controller/AdminController.java b/src/main/java/com/salon/controller/AdminController.java
+index 42b4a9f..e9a1212 100644
+--- a/src/main/java/com/salon/controller/AdminController.java
++++ b/src/main/java/com/salon/controller/AdminController.java
+@@ -11,9 +11,9 @@ import com.salon.dto.ProductResponse;
+ import com.salon.dto.ServiceRequest;
+ import com.salon.dto.ServiceResponse;
+ import com.salon.dto.TopItemResponse;
+-import com.salon.security.SecurityUtil;
+ import com.salon.service.BillingService;
+ import com.salon.service.BookingService;
++import com.salon.service.SalonService;
+ import com.salon.service.DashboardService;
+ import com.salon.service.ProductService;
+ import com.salon.service.ReengagementService;
+@@ -46,6 +46,7 @@ public class AdminController {
+     private final BillingService billingService;
+     private final ReengagementService reengagementService;
+     private final DashboardService dashboardService;
++    private final SalonService salonService;
+ 
+     public AdminController(UserService userService,
+                            ServiceService serviceService,
+@@ -54,7 +55,8 @@ public class AdminController {
+                            ProductService productService,
+                            BillingService billingService,
+                            ReengagementService reengagementService,
+-                           DashboardService dashboardService) {
++                           DashboardService dashboardService,
++                           SalonService salonService) {
+     	
+         this.userService = userService;
+         this.serviceService = serviceService;
+@@ -64,6 +66,7 @@ public class AdminController {
+         this.billingService = billingService;
+         this.reengagementService=reengagementService;
+         this.dashboardService = dashboardService;
++        this.salonService = salonService;
+     }
+ 
+     @PostMapping("/customers")
+@@ -71,8 +74,7 @@ public class AdminController {
+     public ResponseEntity<?> registerCustomerByAdmin(
+             @Valid @RequestBody CustomerRegisterRequest request) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        userService.registerCustomerByAdmin(request, salonId);
++        userService.registerCustomerByAdmin(request, salonService.getCurrentSalon());
+         return ResponseEntity.ok("Customer registered");
+     }
+ 
+diff --git a/src/main/java/com/salon/controller/AuthController.java b/src/main/java/com/salon/controller/AuthController.java
+index c7418ce..5b1d09b 100644
+--- a/src/main/java/com/salon/controller/AuthController.java
++++ b/src/main/java/com/salon/controller/AuthController.java
+@@ -4,6 +4,7 @@ import com.salon.dto.*;
+ import com.salon.entity.User;
+ import com.salon.security.JwtUtil;
+ import com.salon.service.PasswordResetService;
++import com.salon.service.SupabaseJwtVerifier;
+ import com.salon.service.UserService;
+ 
+ import jakarta.validation.Valid;
+@@ -20,14 +21,17 @@ public class AuthController {
+     private final UserService userService;
+     private final JwtUtil jwtUtil;
+     private final PasswordResetService passwordResetService;
++    private final SupabaseJwtVerifier supabaseJwtVerifier;
+ 
+     public AuthController(UserService userService,
+                           JwtUtil jwtUtil,
+-                          PasswordResetService passwordResetService) {
++                          PasswordResetService passwordResetService,
++                          SupabaseJwtVerifier supabaseJwtVerifier) {
+ 
+         this.userService = userService;
+         this.jwtUtil = jwtUtil;
+         this.passwordResetService = passwordResetService;
++        this.supabaseJwtVerifier = supabaseJwtVerifier;
+     }
+ 
+     // ================= ADMIN REGISTRATION =================
+@@ -59,7 +63,7 @@ public class AuthController {
+         String token = jwtUtil.generateToken(
+                 admin.getId(),
+                 admin.getEmail(),
+-                admin.getSalon().getId(),
++                admin.getSalon().getName(),
+                 roles
+         );
+ 
+@@ -86,7 +90,7 @@ public class AuthController {
+         String token = jwtUtil.generateToken(
+                 customer.getId(),
+                 customer.getEmail(),
+-                customer.getSalon().getId(),
++                customer.getSalon().getName(),
+                 roles
+         );
+ 
+@@ -119,6 +123,53 @@ public class AuthController {
+ 
+ 
+ 
++    // ================= SUPABASE / GOOGLE OAUTH =================
++    /**
++     * Exchange Supabase access token (from Google OAuth sign-in) for salon JWT.
++     * Frontend: supabase.auth.signInWithOAuth({ provider: 'google' }) ΓåÆ session.access_token
++     * Send access_token here with optional salonName (required for new customers).
++     */
++    @PostMapping("/supabase/exchange")
++    public ResponseEntity<LoginResponse> supabaseExchange(
++            @Valid @RequestBody SupabaseExchangeRequest request) {
++
++        var info = supabaseJwtVerifier.verifyAndExtract(request.getAccessToken());
++
++        User user = userService.findOrCreateFromSupabase(
++                info,
++                request.getSalonName(),
++                request.getRole() != null ? request.getRole() : "ROLE_CUSTOMER"
++        );
++
++        // Admin approval check (same as email/password login)
++        boolean isAdmin = user.getUserRoles().stream()
++                .anyMatch(ur -> "ROLE_ADMIN".equals(ur.getRole().getName()));
++        if (isAdmin) {
++            if (user.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
++                throw new RuntimeException("Admin account not approved yet");
++            }
++            if (user.getSalon() != null && user.getSalon().getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
++                throw new RuntimeException("Salon not approved yet");
++            }
++        }
++
++        List<String> roles = user.getUserRoles()
++                .stream()
++                .map(ur -> ur.getRole().getName())
++                .toList();
++
++        String salonName = user.getSalon() != null ? user.getSalon().getName() : null;
++
++        String token = jwtUtil.generateToken(
++                user.getId(),
++                user.getEmail(),
++                salonName,
++                roles
++        );
++
++        return ResponseEntity.ok(new LoginResponse(token));
++    }
++
+     // ================= FORGOT PASSWORD =================
+     @PostMapping("/forgot-password")
+     public ResponseEntity<?> forgotPassword(
+diff --git a/src/main/java/com/salon/controller/CustomerController.java b/src/main/java/com/salon/controller/CustomerController.java
+index 55447fe..1a4ce02 100644
+--- a/src/main/java/com/salon/controller/CustomerController.java
++++ b/src/main/java/com/salon/controller/CustomerController.java
+@@ -77,7 +77,6 @@ public class CustomerController {
+ 
+     
+     @GetMapping("/services")
+-    @PreAuthorize("hasRole('CUSTOMER')")
+     public ResponseEntity<Page<ServiceResponse>> getServices(
+             Pageable pageable) {
+ 
+@@ -116,7 +115,6 @@ public class CustomerController {
+     }
+     
+     @GetMapping("/products")
+-    @PreAuthorize("hasRole('CUSTOMER')")
+     public ResponseEntity<Page<ProductResponse>> getProducts(Pageable pageable) {
+ 
+         return ResponseEntity.ok(productService.getActiveProducts(pageable));
+diff --git a/src/main/java/com/salon/controller/SuperAdminController.java b/src/main/java/com/salon/controller/SuperAdminController.java
+index 2ecac56..ecdae83 100644
+--- a/src/main/java/com/salon/controller/SuperAdminController.java
++++ b/src/main/java/com/salon/controller/SuperAdminController.java
+@@ -31,12 +31,12 @@ public class SuperAdminController {
+         return salonRepository.findByApprovalStatus(ApprovalStatus.PENDING);
+     }
+ 
+-    // 2∩╕ÅΓâú Approve salon + admins
+-    @PutMapping("/salons/{salonId}/approve")
+-    public ResponseEntity<?> approveSalon(@PathVariable Long salonId) {
++ // 2∩╕ÅΓâú Approve salon + admins
++    @PutMapping("/salons/{salonName}/approve")
++    public ResponseEntity<?> approveSalon(@PathVariable String salonName) {
+ 
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Salon salon = salonRepository.findByNameIgnoreCase(salonName)
++                .orElseThrow(() -> new RuntimeException("Salon not found: " + salonName));
+ 
+         salon.setApprovalStatus(ApprovalStatus.APPROVED);
+         salonRepository.save(salon);
+@@ -47,15 +47,15 @@ public class SuperAdminController {
+     }
+ 
+     // 3∩╕ÅΓâú Reject salon
+-    @PutMapping("/salons/{salonId}/reject")
+-    public ResponseEntity<?> rejectSalon(@PathVariable Long salonId) {
++    @PutMapping("/salons/{salonName}/reject")
++    public ResponseEntity<?> rejectSalon(@PathVariable String salonName) {
+ 
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Salon salon = salonRepository.findByNameIgnoreCase(salonName)
++                .orElseThrow(() -> new RuntimeException("Salon not found: " + salonName));
+ 
+         salon.setApprovalStatus(ApprovalStatus.REJECTED);
+         salonRepository.save(salon);
+ 
+         return ResponseEntity.ok("Salon rejected");
+     }
+-}
++}
+\ No newline at end of file
+diff --git a/src/main/java/com/salon/controller/TestController.java b/src/main/java/com/salon/controller/TestController.java
+index 8ebf92b..344089a 100644
+--- a/src/main/java/com/salon/controller/TestController.java
++++ b/src/main/java/com/salon/controller/TestController.java
+@@ -1,13 +1,14 @@
+ package com.salon.controller;
+ 
++import com.salon.security.SecurityUtil;
++import org.springframework.context.annotation.Profile;
+ import org.springframework.security.access.prepost.PreAuthorize;
+ import org.springframework.web.bind.annotation.GetMapping;
+-import org.springframework.web.bind.annotation.RequestAttribute;
+ import org.springframework.web.bind.annotation.RestController;
+ 
+-import com.salon.security.SecurityUtil;
+-
++/** Test endpoints - only active in dev profile */
+ @RestController
++@Profile("dev")
+ public class TestController {
+ 
+     @PreAuthorize("hasRole('CUSTOMER')")
+@@ -22,23 +23,12 @@ public class TestController {
+         return "Admin role access OK";
+     }
+     
++    @PreAuthorize("hasAnyRole('ADMIN','CUSTOMER')")
+     @GetMapping("/api/test/salon")
+     public String testSalon() {
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        return "Salon ID from JWT = " + salonId;
++        String salonName = SecurityUtil.getCurrentSalonName();
++        return "Salon name from JWT = " + salonName;
+     }
+-    
+-  
+-
+-        @GetMapping("/api/admin")
+-        public String adminTest(@RequestAttribute("salonId") Long salonId) {
+-            return "ADMIN JWT OK | salonId = " + salonId;
+-        }
+-
+-        @GetMapping("/api/c")
+-        public String customerTest(@RequestAttribute("salonId") Long salonId) {
+-            return "CUSTOMER JWT OK | salonId = " + salonId;
+-        }
+    
+ 
+ }
+diff --git a/src/main/java/com/salon/dto/BookingResponse.java b/src/main/java/com/salon/dto/BookingResponse.java
+index ca992b4..c74762f 100644
+--- a/src/main/java/com/salon/dto/BookingResponse.java
++++ b/src/main/java/com/salon/dto/BookingResponse.java
+@@ -7,15 +7,18 @@ public class BookingResponse {
+ 
+     private Long bookingId;
+     private String serviceName;
++    private String customerName;
+     private LocalDateTime appointmentTime;
+     private BookingStatus status;
+ 
+     public BookingResponse(Long bookingId,
+                            String serviceName,
++                           String customerName,
+                            LocalDateTime appointmentTime,
+                            BookingStatus status) {
+         this.bookingId = bookingId;
+         this.serviceName = serviceName;
++        this.customerName = customerName;
+         this.appointmentTime = appointmentTime;
+         this.status = status;
+     }
+@@ -28,6 +31,10 @@ public class BookingResponse {
+         return serviceName;
+     }
+ 
++    public String getCustomerName() {
++        return customerName;
++    }
++
+     public LocalDateTime getAppointmentTime() {
+         return appointmentTime;
+     }
+diff --git a/src/main/java/com/salon/dto/CustomerRegisterRequest.java b/src/main/java/com/salon/dto/CustomerRegisterRequest.java
+index dfaab7d..ab9b682 100644
+--- a/src/main/java/com/salon/dto/CustomerRegisterRequest.java
++++ b/src/main/java/com/salon/dto/CustomerRegisterRequest.java
+@@ -22,7 +22,7 @@ public class CustomerRegisterRequest {
+ 	    @NotBlank(message = "Phone is required")
+ 	    private String phone;
+ 
+-	    @NotNull(message = "Salonname is required")
++	    /** Salon name - optional for single-tenant (uses default from config) */
+ 	    private String salonName;
+ 	    
+ 	    public String getFullName() { return fullName; }
+diff --git a/src/main/java/com/salon/dto/LoginRequest.java b/src/main/java/com/salon/dto/LoginRequest.java
+index e727fa3..dd8a13d 100644
+--- a/src/main/java/com/salon/dto/LoginRequest.java
++++ b/src/main/java/com/salon/dto/LoginRequest.java
+@@ -13,8 +13,8 @@ public class LoginRequest {
+ 	    @NotBlank(message = "Password is required")
+ 	    private String password;
+ 
+-	    @NotBlank
+-	    private String salonName;   // Γ£à NEW
++	    /** Salon name - optional for single-tenant (uses default from config) */
++	    private String salonName;
+ 
+ 	    public String getEmail() { return email; }
+ 	    public void setEmail(String email) { this.email = email; }
+diff --git a/src/main/java/com/salon/dto/SupabaseExchangeRequest.java b/src/main/java/com/salon/dto/SupabaseExchangeRequest.java
+new file mode 100644
+index 0000000..fa426e7
+--- /dev/null
++++ b/src/main/java/com/salon/dto/SupabaseExchangeRequest.java
+@@ -0,0 +1,49 @@
++package com.salon.dto;
++
++import jakarta.validation.constraints.NotBlank;
++
++/**
++ * Request body for exchanging a Supabase access token for a salon JWT.
++ * Used when user signs in with Google via Supabase Auth.
++ */
++public class SupabaseExchangeRequest {
++
++    @NotBlank(message = "Access token is required")
++    private String accessToken;
++
++    /**
++     * Salon name - required for new customers to associate with a salon.
++     * Optional if user already exists (matched by providerId or email).
++     */
++    private String salonName;
++
++    /**
++     * Role for new users: "ROLE_CUSTOMER" (default) or "ROLE_ADMIN".
++     * Admins require salon approval; customers do not.
++     */
++    private String role = "ROLE_CUSTOMER";
++
++    public String getAccessToken() {
++        return accessToken;
++    }
++
++    public void setAccessToken(String accessToken) {
++        this.accessToken = accessToken;
++    }
++
++    public String getSalonName() {
++        return salonName;
++    }
++
++    public void setSalonName(String salonName) {
++        this.salonName = salonName;
++    }
++
++    public String getRole() {
++        return role;
++    }
++
++    public void setRole(String role) {
++        this.role = role;
++    }
++}
+diff --git a/src/main/java/com/salon/entity/Booking.java b/src/main/java/com/salon/entity/Booking.java
+index 32e2f2b..37ed2e7 100644
+--- a/src/main/java/com/salon/entity/Booking.java
++++ b/src/main/java/com/salon/entity/Booking.java
+@@ -4,7 +4,12 @@ import jakarta.persistence.*;
+ import java.time.LocalDateTime;
+ 
+ @Entity
+-@Table(name = "bookings")
++@Table(name = "bookings", indexes = {
++        @Index(name = "idx_bookings_salon_name", columnList = "salon_name"),
++        @Index(name = "idx_bookings_customer_id", columnList = "customer_id"),
++        @Index(name = "idx_bookings_status", columnList = "status"),
++        @Index(name = "idx_bookings_appointment_time", columnList = "appointment_time")
++})
+ public class Booking {
+ 
+     @Id
+@@ -22,9 +27,8 @@ public class Booking {
+     private Service service;
+ 
+     // tenant boundary
+-    @ManyToOne(fetch = FetchType.LAZY)
+-    @JoinColumn(name = "salon_id", nullable = false)
+-    private Salon salon;
++    @Column(name = "salon_name", nullable = false)
++    private String salonName;
+ 
+     // when
+     private LocalDateTime appointmentTime;
+@@ -58,12 +62,12 @@ public class Booking {
+         this.service = service;
+     }
+ 
+-    public Salon getSalon() {
+-        return salon;
++    public String getSalonName() {
++        return salonName;
+     }
+ 
+-    public void setSalon(Salon salon) {
+-        this.salon = salon;
++    public void setSalonName(String salonName) {
++        this.salonName = salonName;
+     }
+ 
+     public LocalDateTime getAppointmentTime() {
+diff --git a/src/main/java/com/salon/entity/Invoice.java b/src/main/java/com/salon/entity/Invoice.java
+index 944eec5..27df7b8 100644
+--- a/src/main/java/com/salon/entity/Invoice.java
++++ b/src/main/java/com/salon/entity/Invoice.java
+@@ -13,8 +13,8 @@ public class Invoice {
+     @GeneratedValue(strategy = GenerationType.IDENTITY)
+     private Long id;
+ 
+-    @ManyToOne
+-    private Salon salon;
++    @Column(name = "salon_name", nullable = false)
++    private String salonName;
+ 
+     @ManyToOne
+     private User customer;
+@@ -44,8 +44,8 @@ public class Invoice {
+ 
+     // getters & setters
+     public Long getId() { return id; }
+-    public Salon getSalon() { return salon; }
+-    public void setSalon(Salon salon) { this.salon = salon; }
++    public String getSalonName() { return salonName; }
++    public void setSalonName(String salonName) { this.salonName = salonName; }
+ 
+     public User getCustomer() { return customer; }
+     public void setCustomer(User customer) { this.customer = customer; }
+diff --git a/src/main/java/com/salon/entity/Product.java b/src/main/java/com/salon/entity/Product.java
+index cb5d834..e1b10f8 100644
+--- a/src/main/java/com/salon/entity/Product.java
++++ b/src/main/java/com/salon/entity/Product.java
+@@ -15,11 +15,11 @@ public class Product {
+     private String description;
+     private Double price;
+     private Integer stock;
++    private Integer lowStockThreshold = 5;  // Alert when below this
+     private boolean active = true;
+ 
+-    @ManyToOne(fetch = FetchType.LAZY)
+-    @JoinColumn(name = "salon_id", nullable = false)
+-    private Salon salon;
++    @Column(name = "salon_name", nullable = false)
++    private String salonName;
+ 
+     private LocalDateTime createdAt;
+ 
+@@ -43,11 +43,14 @@ public class Product {
+     public Integer getStock() { return stock; }
+     public void setStock(Integer stock) { this.stock = stock; }
+ 
++    public Integer getLowStockThreshold() { return lowStockThreshold; }
++    public void setLowStockThreshold(Integer lowStockThreshold) { this.lowStockThreshold = lowStockThreshold; }
++
+     public boolean isActive() { return active; }
+     public void setActive(boolean active) { this.active = active; }
+ 
+-    public Salon getSalon() { return salon; }
+-    public void setSalon(Salon salon) { this.salon = salon; }
++    public String getSalonName() { return salonName; }
++    public void setSalonName(String salonName) { this.salonName = salonName; }
+ 
+     public LocalDateTime getCreatedAt() { return createdAt; }
+ }
+diff --git a/src/main/java/com/salon/entity/Service.java b/src/main/java/com/salon/entity/Service.java
+index ad72685..de057b0 100644
+--- a/src/main/java/com/salon/entity/Service.java
++++ b/src/main/java/com/salon/entity/Service.java
+@@ -19,9 +19,8 @@ public class Service {
+ 
+     private boolean active = true;
+ 
+-    @ManyToOne(fetch = FetchType.LAZY)
+-    @JoinColumn(name = "salon_id", nullable = false)
+-    private Salon salon;
++    @Column(name = "salon_name", nullable = false)
++    private String salonName;
+ 
+     private LocalDateTime createdAt = LocalDateTime.now();
+ 
+@@ -66,12 +65,12 @@ public class Service {
+         this.active = active;
+     }
+ 
+-    public Salon getSalon() {
+-        return salon;
++    public String getSalonName() {
++        return salonName;
+     }
+ 
+-    public void setSalon(Salon salon) {
+-        this.salon = salon;
++    public void setSalonName(String salonName) {
++        this.salonName = salonName;
+     }
+ 
+     public LocalDateTime getCreatedAt() {
+diff --git a/src/main/java/com/salon/entity/User.java b/src/main/java/com/salon/entity/User.java
+index 222320e..d0b7bcc 100644
+--- a/src/main/java/com/salon/entity/User.java
++++ b/src/main/java/com/salon/entity/User.java
+@@ -9,8 +9,11 @@ import jakarta.persistence.*;
+ 
+ 
+ @Entity
+-@Table(name = "users")
+-
++@Table(name = "users", indexes = {
++        @Index(name = "idx_users_salon_name", columnList = "salon_name"),
++        @Index(name = "idx_users_email", columnList = "email"),
++        @Index(name = "idx_users_provider_id", columnList = "provider_id")
++})
+ public class User {
+ 
+ 	    @Id
+@@ -23,11 +26,19 @@ public class User {
+ 	    @Column(nullable = false)
+ 	    private String email;
+ 
+-	    @Column(unique = true)
+-	    private String phone;
++    @Column(unique = true)
++    private String phone;
+ 
+-	    @Column(nullable = false)
+-	    private String password;
++    @Column
++    private String password;  // nullable for OAuth-only users (e.g. Google sign-in)
++
++    /** Supabase/auth provider user ID (e.g. UUID from Supabase) */
++    @Column(unique = true)
++    private String providerId;
++
++    /** Auth provider: "email", "google", etc. */
++    @Column
++    private String authProvider = "email";
+ 
+ 	    @Column(nullable = false)
+ 	    private boolean active = true;
+@@ -35,9 +46,8 @@ public class User {
+ 	    @Column(nullable = false)
+ 	    private LocalDateTime createdAt = LocalDateTime.now();
+ 
+-	    @ManyToOne
+-	    @JoinColumn(name = "salon_id")
+-	    private Salon salon;
++	    @Column(name = "salon_name", nullable = false)
++	    private String salonName;
+ 
+ 	    @Enumerated(EnumType.STRING)
+ 	    @Column(nullable = false)
+@@ -46,6 +56,10 @@ public class User {
+ 	    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+ 	    private List<UserRole> userRoles = new ArrayList<>();
+ 
++	    /** Loyalty points (customers only) - 1 point per $1 spent, redeemable */
++	    @Column
++	    private Integer loyaltyPoints = 0;
++
+     public ApprovalStatus getApprovalStatus() {
+         return approvalStatus;
+     }
+@@ -103,6 +117,22 @@ public class User {
+         this.password = password;
+     }
+ 
++    public String getProviderId() {
++        return providerId;
++    }
++
++    public void setProviderId(String providerId) {
++        this.providerId = providerId;
++    }
++
++    public String getAuthProvider() {
++        return authProvider;
++    }
++
++    public void setAuthProvider(String authProvider) {
++        this.authProvider = authProvider;
++    }
++
+     public boolean isActive() {
+         return active;
+     }
+@@ -115,12 +145,12 @@ public class User {
+         return createdAt;
+     }
+     
+-    public Salon getSalon() {
+-        return salon;
++    public String getSalonName() {
++        return salonName;
+     }
+ 
+-    public void setSalon(Salon salon) {
+-        this.salon = salon;
++    public void setSalonName(String salonName) {
++        this.salonName = salonName;
+     }
+     
+     public List<UserRole> getUserRoles() {
+@@ -129,9 +159,8 @@ public class User {
+ 
+ 	public void setCreatedAt(LocalDateTime now) {
+ 		this.createdAt = LocalDateTime.now();
+-		
+ 	}
+ 
+-
+-    
++	public Integer getLoyaltyPoints() { return loyaltyPoints; }
++	public void setLoyaltyPoints(Integer loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
+ }
+diff --git a/src/main/java/com/salon/exception/ApiErrorResponse.java b/src/main/java/com/salon/exception/ApiErrorResponse.java
+index 6446c2e..9715d2d 100644
+--- a/src/main/java/com/salon/exception/ApiErrorResponse.java
++++ b/src/main/java/com/salon/exception/ApiErrorResponse.java
+@@ -1,28 +1,66 @@
+ package com.salon.exception;
+ 
+-import java.time.LocalDateTime;
++import com.fasterxml.jackson.annotation.JsonInclude;
+ 
++import java.time.Instant;
++import java.util.List;
++
++/**
++ * Standardized API error response for enterprise consistency.
++ */
++@JsonInclude(JsonInclude.Include.NON_NULL)
+ public class ApiErrorResponse {
+ 
+-    private int status;
+-    private String message;
+-    private LocalDateTime timestamp;
++    private final int status;
++    private final String code;
++    private final String message;
++    private final String path;
++    private final String traceId;
++    private final Instant timestamp;
++    private final List<FieldError> errors;
+ 
+-    public ApiErrorResponse(int status, String message) {
++    public ApiErrorResponse(int status, String code, String message, String path, String traceId, List<FieldError> errors) {
+         this.status = status;
++        this.code = code;
+         this.message = message;
+-        this.timestamp = LocalDateTime.now();
++        this.path = path;
++        this.traceId = traceId;
++        this.timestamp = Instant.now();
++        this.errors = errors;
++    }
++
++    /** Simplified constructor for backward compatibility */
++    public ApiErrorResponse(int status, String message) {
++        this(status, "ERROR", message, null, null, null);
+     }
+ 
+     public int getStatus() {
+         return status;
+     }
+ 
++    public String getCode() {
++        return code;
++    }
++
+     public String getMessage() {
+         return message;
+     }
+ 
+-    public LocalDateTime getTimestamp() {
++    public String getPath() {
++        return path;
++    }
++
++    public String getTraceId() {
++        return traceId;
++    }
++
++    public Instant getTimestamp() {
+         return timestamp;
+     }
++
++    public List<FieldError> getErrors() {
++        return errors;
++    }
++
++    public record FieldError(String field, String message) {}
+ }
+diff --git a/src/main/java/com/salon/exception/GlobalExceptionHandler.java b/src/main/java/com/salon/exception/GlobalExceptionHandler.java
+index 370b1b9..d359bc0 100644
+--- a/src/main/java/com/salon/exception/GlobalExceptionHandler.java
++++ b/src/main/java/com/salon/exception/GlobalExceptionHandler.java
+@@ -1,81 +1,110 @@
+ package com.salon.exception;
+ 
++import jakarta.servlet.http.HttpServletRequest;
++import org.slf4j.Logger;
++import org.slf4j.LoggerFactory;
++import org.slf4j.MDC;
+ import org.springframework.http.HttpStatus;
+ import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.MethodArgumentNotValidException;
+ import org.springframework.web.bind.annotation.ExceptionHandler;
+ import org.springframework.web.bind.annotation.RestControllerAdvice;
+ import org.springframework.web.server.ResponseStatusException;
+ 
++import java.util.List;
++import java.util.stream.Collectors;
++
++/**
++ * Global exception handler with enterprise-grade error responses.
++ * Maps exceptions to appropriate HTTP status codes and includes traceId for debugging.
++ */
+ @RestControllerAdvice
+ public class GlobalExceptionHandler {
+ 
+-    // ≡ƒöÉ Handles explicit HTTP errors (401, 403, etc.)
+-    @ExceptionHandler(ResponseStatusException.class)
+-    public ResponseEntity<ApiErrorResponse> handleResponseStatusException(
+-            ResponseStatusException ex) {
+-
+-        ApiErrorResponse error =
+-                new ApiErrorResponse(
+-                        ex.getStatusCode().value(),
+-                        ex.getReason()
+-                );
++    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
++    private static final String CORRELATION_ID = "correlationId";
+ 
+-        return ResponseEntity
+-                .status(ex.getStatusCode())
+-                .body(error);
++    @ExceptionHandler(ResourceNotFoundException.class)
++    public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
++            ResourceNotFoundException ex, HttpServletRequest request) {
++        return buildResponse(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", ex.getMessage(), request, null);
+     }
+ 
+-    // Γ¥î Business / validation errors
+-    @ExceptionHandler(RuntimeException.class)
+-    public ResponseEntity<ApiErrorResponse> handleRuntimeException(
+-            RuntimeException ex) {
++    @ExceptionHandler(ForbiddenException.class)
++    public ResponseEntity<ApiErrorResponse> handleForbidden(
++            ForbiddenException ex, HttpServletRequest request) {
++        return buildResponse(HttpStatus.FORBIDDEN, "FORBIDDEN", ex.getMessage(), request, null);
++    }
+ 
+-        ApiErrorResponse error =
+-                new ApiErrorResponse(
+-                        HttpStatus.BAD_REQUEST.value(),
+-                        ex.getMessage()
+-                );
++    @ExceptionHandler(UnauthorizedException.class)
++    public ResponseEntity<ApiErrorResponse> handleUnauthorized(
++            UnauthorizedException ex, HttpServletRequest request) {
++        return buildResponse(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", ex.getMessage(), request, null);
++    }
+ 
+-        return ResponseEntity
+-                .status(HttpStatus.BAD_REQUEST)
+-                .body(error);
++    @ExceptionHandler(ConflictException.class)
++    public ResponseEntity<ApiErrorResponse> handleConflict(
++            ConflictException ex, HttpServletRequest request) {
++        return buildResponse(HttpStatus.CONFLICT, "CONFLICT", ex.getMessage(), request, null);
+     }
+ 
+-    // ≡ƒÜ¿ Unexpected server errors
+-    @ExceptionHandler(Exception.class)
+-    public ResponseEntity<ApiErrorResponse> handleGenericException(
+-            Exception ex) {
++    @ExceptionHandler(BadRequestException.class)
++    public ResponseEntity<ApiErrorResponse> handleBadRequest(
++            BadRequestException ex, HttpServletRequest request) {
++        return buildResponse(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), request, null);
++    }
+ 
+-        ApiErrorResponse error =
+-                new ApiErrorResponse(
+-                        HttpStatus.INTERNAL_SERVER_ERROR.value(),
+-                        "Internal server error"
+-                );
++    @ExceptionHandler(EmailAlreadyExistsException.class)
++    public ResponseEntity<ApiErrorResponse> handleEmailExists(
++            EmailAlreadyExistsException ex, HttpServletRequest request) {
++        return buildResponse(HttpStatus.CONFLICT, "EMAIL_EXISTS", ex.getMessage(), request, null);
++    }
+ 
+-        return ResponseEntity
+-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+-                .body(error);
++    @ExceptionHandler(ResponseStatusException.class)
++    public ResponseEntity<ApiErrorResponse> handleResponseStatus(
++            ResponseStatusException ex, HttpServletRequest request) {
++        String message = ex.getReason() != null ? ex.getReason() : ex.getStatusCode().toString();
++        return buildResponse(HttpStatus.valueOf(ex.getStatusCode().value()), "HTTP_ERROR", message, request, null);
+     }
+-    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+-    public ResponseEntity<ApiErrorResponse> handleValidationException(
+-            org.springframework.web.bind.MethodArgumentNotValidException ex) {
+ 
+-        String message = ex.getBindingResult()
+-                .getFieldErrors()
+-                .stream()
+-                .findFirst()
+-                .map(err -> err.getField() + ": " + err.getDefaultMessage())
+-                .orElse("Validation error");
++    @ExceptionHandler(MethodArgumentNotValidException.class)
++    public ResponseEntity<ApiErrorResponse> handleValidation(
++            MethodArgumentNotValidException ex, HttpServletRequest request) {
++        List<ApiErrorResponse.FieldError> errors = ex.getBindingResult().getFieldErrors().stream()
++                .map(e -> new ApiErrorResponse.FieldError(e.getField(), e.getDefaultMessage()))
++                .collect(Collectors.toList());
++        String message = errors.isEmpty() ? "Validation failed" : errors.get(0).message();
++        return buildResponse(HttpStatus.UNPROCESSABLE_ENTITY, "VALIDATION_ERROR", message, request, errors);
++    }
+ 
+-        ApiErrorResponse error =
+-                new ApiErrorResponse(
+-                        HttpStatus.BAD_REQUEST.value(),
+-                        message
+-                );
++    @ExceptionHandler(RuntimeException.class)
++    public ResponseEntity<ApiErrorResponse> handleRuntime(
++            RuntimeException ex, HttpServletRequest request) {
++        log.warn("RuntimeException: {} - {}", ex.getClass().getSimpleName(), ex.getMessage());
++        return buildResponse(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.getMessage(), request, null);
++    }
+ 
+-        return ResponseEntity
+-                .status(HttpStatus.BAD_REQUEST)
+-                .body(error);
++    @ExceptionHandler(Exception.class)
++    public ResponseEntity<ApiErrorResponse> handleGeneric(
++            Exception ex, HttpServletRequest request) {
++        log.error("Unexpected error", ex);
++        return buildResponse(
++                HttpStatus.INTERNAL_SERVER_ERROR,
++                "INTERNAL_ERROR",
++                "An unexpected error occurred. Please try again later.",
++                request,
++                null
++        );
+     }
+ 
++    private ResponseEntity<ApiErrorResponse> buildResponse(
++            HttpStatus status, String code, String message,
++            HttpServletRequest request, List<ApiErrorResponse.FieldError> errors) {
++        String path = request != null ? request.getRequestURI() : null;
++        String traceId = MDC.get(CORRELATION_ID);
++        ApiErrorResponse body = new ApiErrorResponse(
++                status.value(), code, message, path, traceId, errors
++        );
++        return ResponseEntity.status(status).body(body);
++    }
+ }
+diff --git a/src/main/java/com/salon/repository/BookingRepository.java b/src/main/java/com/salon/repository/BookingRepository.java
+index 221f922..eac4361 100644
+--- a/src/main/java/com/salon/repository/BookingRepository.java
++++ b/src/main/java/com/salon/repository/BookingRepository.java
+@@ -56,6 +56,25 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
+     	            LocalDateTime cutoffDate,
+     	            Pageable pageable
+     	    );
++
++	    // ADMIN ΓÇö directory of customers with booking stats
++	    @Query("""
++	            SELECT
++	                b.customer.id,
++	                b.customer.fullName,
++	                b.customer.email,
++	                b.customer.phone,
++	                MAX(b.appointmentTime),
++	                COUNT(b)
++	            FROM Booking b
++	            WHERE b.salon.id = :salonId
++	              AND b.status = 'COMPLETED'
++	            GROUP BY b.customer.id, b.customer.fullName, b.customer.email, b.customer.phone
++	            """)
++	    Page<Object[]> findCustomerStats(
++	            Long salonId,
++	            Pageable pageable
++	    );
+     	
+     	    long countBySalon_IdAndAppointmentTimeBetween(
+     	            Long salonId,
+diff --git a/src/main/java/com/salon/repository/InvoiceRepository.java b/src/main/java/com/salon/repository/InvoiceRepository.java
+index efc2fe0..87a1de4 100644
+--- a/src/main/java/com/salon/repository/InvoiceRepository.java
++++ b/src/main/java/com/salon/repository/InvoiceRepository.java
+@@ -11,8 +11,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
+ import java.util.List;
+ import java.util.Optional;
+ 
++import org.springframework.data.domain.Pageable;
+ import org.springframework.data.jpa.repository.Query;
+ 
++import java.time.LocalDateTime;
++import java.util.List;
++
+ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+ 	
+ 	 Optional<Invoice> findByIdAndSalon_Id(Long invoiceId, Long salonId);
+@@ -36,4 +40,22 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
+ 	    	    WHERE i.salon.id = :salonId
+ 	    	""")
+ 	    	double getTotalRevenue(Long salonId);
++
++	    @Query("""
++	            SELECT COALESCE(SUM(i.totalAmount), 0)
++	            FROM Invoice i
++	            WHERE i.salon.id = :salonId
++	              AND i.createdAt BETWEEN :start AND :end
++	        """)
++	    double getRevenueBetween(Long salonId, LocalDateTime start, LocalDateTime end);
++
++	    @Query("""
++	            SELECT i.customer.id, i.customer.fullName, i.customer.email,
++	                   SUM(i.totalAmount), COUNT(i)
++	            FROM Invoice i
++	            WHERE i.salon.id = :salonId AND i.customer IS NOT NULL
++	            GROUP BY i.customer.id, i.customer.fullName, i.customer.email
++	            ORDER BY SUM(i.totalAmount) DESC
++	        """)
++	    List<Object[]> findTopCustomersBySpend(Long salonId, Pageable pageable);
+ }
+diff --git a/src/main/java/com/salon/repository/ProductRepository.java b/src/main/java/com/salon/repository/ProductRepository.java
+index 5f0445c..cec1153 100644
+--- a/src/main/java/com/salon/repository/ProductRepository.java
++++ b/src/main/java/com/salon/repository/ProductRepository.java
+@@ -19,4 +19,11 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
+ 
+     List<Product> findBySalon_IdAndActiveTrue(Long salonId);
+ 
++    @org.springframework.data.jpa.repository.Query("""
++            SELECT p FROM Product p
++            WHERE p.salon.id = :salonId AND p.active = true
++              AND p.stock <= p.lowStockThreshold AND p.stock > 0
++        """)
++    List<Product> findLowStockProducts(Long salonId);
++
+ }
+diff --git a/src/main/java/com/salon/repository/UserRepository.java b/src/main/java/com/salon/repository/UserRepository.java
+index 8395e44..8d89ba1 100644
+--- a/src/main/java/com/salon/repository/UserRepository.java
++++ b/src/main/java/com/salon/repository/UserRepository.java
+@@ -21,6 +21,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
+     // ≡ƒöº UTIL
+     Optional<User> findByEmail(String email);
+ 
++    Optional<User> findByProviderId(String providerId);
++
+     // ≡ƒææ SUPER ADMIN APPROVAL
+     @Modifying
+     @Transactional
+diff --git a/src/main/java/com/salon/security/JwtAuthFilter.java b/src/main/java/com/salon/security/JwtAuthFilter.java
+index d33c342..94fe490 100644
+--- a/src/main/java/com/salon/security/JwtAuthFilter.java
++++ b/src/main/java/com/salon/security/JwtAuthFilter.java
+@@ -40,17 +40,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
+ 
+                 Claims claims = jwtUtil.extractClaims(token);
+ 
+-                Long userId = claims.get("userId", Long.class); // Γ£à USER ID
+-                Long salonId = claims.get("salonId", Long.class);
++                Long userId = claims.get("userId", Long.class);
++                String salonName = claims.get("salonName", String.class);
+                 List<String> roles = claims.get("roles", List.class);
+ 
+                 var authorities = roles.stream()
+                         .map(SimpleGrantedAuthority::new)
+                         .toList();
+ 
+-                // ≡ƒöÉ SET SALON CONTEXT
+-                if (salonId != null) {
+-                    SalonContext.setSalonId(salonId);
++                // Single-tenant: set salon name in context
++                if (salonName != null && !salonName.isBlank()) {
++                    SalonContext.setSalonName(salonName);
+                 }
+ 
+                 // ≡ƒöÉ PRINCIPAL = USER ID (CRITICAL FIX)
+diff --git a/src/main/java/com/salon/security/JwtUtil.java b/src/main/java/com/salon/security/JwtUtil.java
+index dc45270..e9a81d0 100644
+--- a/src/main/java/com/salon/security/JwtUtil.java
++++ b/src/main/java/com/salon/security/JwtUtil.java
+@@ -31,14 +31,14 @@ public class JwtUtil {
+     public String generateToken(
+             Long userId,
+             String email,
+-            Long salonId,
++            String salonName,
+             List<String> roles
+     ) {
+ 
+         return Jwts.builder()
+                 .setSubject(email)               // metadata ONLY
+                 .claim("userId", userId)         // identity
+-                .claim("salonId", salonId)       // tenant
++                .claim("salonName", salonName)   // tenant (single-tenant by name)
+                 .claim("roles", roles)           // authorization
+                 .setIssuedAt(new Date())
+                 .setExpiration(
+diff --git a/src/main/java/com/salon/security/SalonContext.java b/src/main/java/com/salon/security/SalonContext.java
+index 566e14e..60128ef 100644
+--- a/src/main/java/com/salon/security/SalonContext.java
++++ b/src/main/java/com/salon/security/SalonContext.java
+@@ -1,18 +1,22 @@
+ package com.salon.security;
+ 
++/**
++ * ThreadLocal context for single-tenant mode.
++ * Stores salon name (not ID) as the tenant identifier.
++ */
+ public class SalonContext {
+ 
+-    private static final ThreadLocal<Long> SALON_ID = new ThreadLocal<>();
++    private static final ThreadLocal<String> SALON_NAME = new ThreadLocal<>();
+ 
+-    public static void setSalonId(Long salonId) {
+-        SALON_ID.set(salonId);
++    public static void setSalonName(String salonName) {
++        SALON_NAME.set(salonName);
+     }
+ 
+-    public static Long getSalonId() {
+-        return SALON_ID.get();
++    public static String getSalonName() {
++        return SALON_NAME.get();
+     }
+ 
+     public static void clear() {
+-        SALON_ID.remove();
++        SALON_NAME.remove();
+     }
+ }
+\ No newline at end of file
+diff --git a/src/main/java/com/salon/security/SecurityUtil.java b/src/main/java/com/salon/security/SecurityUtil.java
+index b5cc211..29b3ddc 100644
+--- a/src/main/java/com/salon/security/SecurityUtil.java
++++ b/src/main/java/com/salon/security/SecurityUtil.java
+@@ -30,21 +30,12 @@ public class SecurityUtil {
+ 	    return (Long) auth.getPrincipal();
+ 	}
+ 
+-    // ================= CURRENT SALON =================
+-    public static Long getCurrentSalonId() {
+-
+-        Long salonId = SalonContext.getSalonId();
+-
+-        if (salonId == null) {
+-            throw new RuntimeException("SalonId not found in context");
++    // ================= CURRENT SALON (single-tenant, by name) =================
++    public static String getCurrentSalonName() {
++        String salonName = SalonContext.getSalonName();
++        if (salonName == null || salonName.isBlank()) {
++            throw new RuntimeException("Salon name not found in context");
+         }
+-
+-        return salonId;
+-    }
+-
+-    // ================= DO NOT USE =================
+-    public static void setCurrentUser(Long userId, Long salonId) {
+-        // intentionally empty
+-        // context is set ONLY in JwtAuthFilter
++        return salonName;
+     }
+ }
+diff --git a/src/main/java/com/salon/service/BillingService.java b/src/main/java/com/salon/service/BillingService.java
+index fcc6484..529fa3c 100644
+--- a/src/main/java/com/salon/service/BillingService.java
++++ b/src/main/java/com/salon/service/BillingService.java
+@@ -22,7 +22,7 @@ public class BillingService {
+     private final BookingRepository bookingRepository;
+     private final ProductRepository productRepository;
+     private final ServiceRepository serviceRepository;
+-    private final SalonRepository salonRepository;
++    private final SalonService salonService;
+     private final AuditLogService auditLogService;
+     private final UserRepository userRepository;
+ 
+@@ -32,7 +32,7 @@ public class BillingService {
+             BookingRepository bookingRepository,
+             ProductRepository productRepository,
+             ServiceRepository serviceRepository,
+-            SalonRepository salonRepository,
++            SalonService salonService,
+             AuditLogService auditLogService,
+             UserRepository userRepository) {
+ 
+@@ -41,7 +41,7 @@ public class BillingService {
+         this.bookingRepository = bookingRepository;
+         this.productRepository = productRepository;
+         this.serviceRepository = serviceRepository;
+-        this.salonRepository = salonRepository;
++        this.salonService = salonService;
+         this.auditLogService = auditLogService;
+         this.userRepository = userRepository;
+     }
+@@ -49,9 +49,8 @@ public class BillingService {
+     @Transactional
+     public InvoiceResponse createInvoice(BillingRequest request) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Salon salon = salonService.getCurrentSalon();
++        Long salonId = salon.getId();
+         Long customerId = SecurityUtil.getCurrentUserId();
+         User customer = userRepository.findById(customerId).get();
+         
+@@ -153,10 +152,7 @@ public class BillingService {
+         );
+     }
+     public Page<InvoiceResponse> getSalonInvoices(Pageable pageable) {
+-
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return invoiceRepository.findBySalon_Id(salonId, pageable)
+                 .map(invoice -> new InvoiceResponse(
+@@ -176,15 +172,8 @@ public class BillingService {
+                 ));
+     }
+     public Page<InvoiceResponse> getCustomerInvoices(Pageable pageable) {
+-
+         Long customerId = SecurityUtil.getCurrentUserId();
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-
+-        User customer = userRepository.findById(customerId)
+-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+-
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return invoiceRepository
+                 .findByCustomer_IdAndSalon_Id(customerId, salonId, pageable)
+diff --git a/src/main/java/com/salon/service/BookingService.java b/src/main/java/com/salon/service/BookingService.java
+index 3a117a0..5ce5ff3 100644
+--- a/src/main/java/com/salon/service/BookingService.java
++++ b/src/main/java/com/salon/service/BookingService.java
+@@ -14,6 +14,7 @@ import com.salon.repository.SalonRepository;
+ import com.salon.repository.ServiceRepository;
+ import com.salon.repository.UserRepository;
+ import com.salon.security.SecurityUtil;
++import com.salon.service.SalonService;
+ 
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+@@ -29,35 +30,35 @@ public class BookingService {
+     private final UserRepository userRepository;
+     private final AuditLogService auditLogService;
+     private final SalonRepository salonRepository;
++    private final SalonService salonService;
+ 
+     public BookingService(
+             BookingRepository bookingRepository,
+             ServiceRepository serviceRepository,
+             UserRepository userRepository,
+             AuditLogService auditLogService,
+-            SalonRepository salonRepository
++            SalonRepository salonRepository,
++            SalonService salonService
+     ) {
+         this.bookingRepository = bookingRepository;
+         this.serviceRepository = serviceRepository;
+         this.userRepository = userRepository;
+         this.auditLogService = auditLogService;
+-        this.salonRepository=salonRepository;
++        this.salonRepository = salonRepository;
++        this.salonService = salonService;
+     }
+ 
+     // ================= CREATE BOOKING =================
+     public BookingResponse createBooking(BookingRequest request) {
+ 
+         Long customerId = SecurityUtil.getCurrentUserId();
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Salon salon = salonService.getCurrentSalon();
+ 
+         User customer = userRepository.findById(customerId)
+                 .orElseThrow(() -> new RuntimeException("Customer not found"));
+-        
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+ 
+         Service service = serviceRepository
+-                .findByIdAndSalonId(request.getServiceId(), salonId)
++                .findByIdAndSalonId(request.getServiceId(), salon.getId())
+                 .orElseThrow(() -> new RuntimeException("Service not found in this salon"));
+ 
+         Booking booking = new Booking();
+@@ -81,7 +82,7 @@ public class BookingService {
+     public List<BookingResponse> getCustomerBookings() {
+ 
+         Long customerId = SecurityUtil.getCurrentUserId();
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return bookingRepository
+                 .findByCustomerIdAndSalonId(customerId, salonId)
+@@ -93,7 +94,7 @@ public class BookingService {
+     public Page<BookingResponse> getCustomerBookings(Pageable pageable) {
+ 
+         Long customerId = SecurityUtil.getCurrentUserId();
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return bookingRepository
+                 .findByCustomerIdAndSalonId(customerId, salonId, pageable)
+@@ -103,7 +104,7 @@ public class BookingService {
+     
+     public List<BookingResponse> getSalonBookings() {
+ 
+-    	Long salonId = SecurityUtil.getCurrentSalonId();
++    	Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return bookingRepository
+                 .findBySalonId(salonId)
+@@ -114,7 +115,7 @@ public class BookingService {
+ 
+     public Page<BookingResponse> getSalonBookings(Pageable pageable) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return bookingRepository
+                 .findBySalonId(salonId, pageable)
+@@ -125,7 +126,7 @@ public class BookingService {
+     public BookingResponse cancelBookingByCustomer(Long bookingId) {
+ 
+         Long customerId = SecurityUtil.getCurrentUserId();
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         Booking booking = bookingRepository
+                 .findByIdAndSalonId(bookingId, salonId)
+@@ -153,7 +154,7 @@ public class BookingService {
+     // ================= ADMIN ΓÇö CANCEL =================
+     public BookingResponse cancelBookingByAdmin(Long bookingId) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         Booking booking = bookingRepository
+                 .findByIdAndSalonId(bookingId, salonId)
+@@ -177,7 +178,7 @@ public class BookingService {
+     // ================= ADMIN ΓÇö COMPLETE =================
+     public BookingResponse completeBooking(Long bookingId) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         Booking booking = bookingRepository
+                 .findByIdAndSalonId(bookingId, salonId)
+@@ -203,6 +204,7 @@ public class BookingService {
+         return new BookingResponse(
+                 booking.getId(),
+                 booking.getService().getName(),
++                booking.getCustomer().getFullName(),
+                 booking.getAppointmentTime(),
+                 booking.getStatus()
+         );
+diff --git a/src/main/java/com/salon/service/BotService.java b/src/main/java/com/salon/service/BotService.java
+index 1fa3f0b..d2c877a 100644
+--- a/src/main/java/com/salon/service/BotService.java
++++ b/src/main/java/com/salon/service/BotService.java
+@@ -2,9 +2,7 @@ package com.salon.service;
+ 
+ import com.salon.dto.BotResponse;
+ import com.salon.repository.ProductRepository;
+-import com.salon.repository.SalonRepository;
+ import com.salon.repository.ServiceRepository;
+-import com.salon.entity.Salon;
+ import com.salon.security.SecurityUtil;
+ import com.salon.entity.Booking;
+ import com.salon.entity.User;
+@@ -21,34 +19,44 @@ public class BotService {
+ 
+     private final ServiceRepository serviceRepository;
+     private final ProductRepository productRepository;
+-    private final SalonRepository salonRepository;
++    private final SalonService salonService;
+     private final BookingRepository bookingRepository;
+     private final UserRepository userRepository;
+ 
+     public BotService(ServiceRepository serviceRepository,
+                       ProductRepository productRepository,
+-                      SalonRepository salonRepository,
++                      SalonService salonService,
+                       BookingRepository bookingRepository,
+                       UserRepository userRepository) {
+         this.serviceRepository = serviceRepository;
+         this.productRepository = productRepository;
+-        this.salonRepository = salonRepository;
++        this.salonService = salonService;
+         this.bookingRepository = bookingRepository;
+         this.userRepository = userRepository;
+     }
+ 
+     public BotResponse reply(String message) {
++        // Bot can be called without auth (permitAll); use default salon for single-tenant
++        Long salonId;
++        Long userId;
++        try {
++            salonId = salonService.getCurrentSalon().getId();
++            userId = SecurityUtil.getCurrentUserId();
++        } catch (Exception e) {
++            // No auth - use default salon; booking lookup won't work without userId
++            salonId = salonService.getDefaultSalon().getId();
++            userId = null;
++        }
+ 
+         String lower = message.toLowerCase();
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+ 
+-        // ≡ƒæç NEW: booking status / next appointment
++        // ≡ƒæç booking status / next appointment (requires auth)
+         if (lower.contains("my booking") || lower.contains("booking status")
+                 || lower.contains("next appointment")) {
+ 
+-            Long userId = SecurityUtil.getCurrentUserId();
++            if (userId == null) {
++                return new BotResponse("Please sign in to view your booking status.");
++            }
+             User customer = userRepository.findById(userId)
+                     .orElseThrow(() -> new RuntimeException("Customer not found"));
+ 
+diff --git a/src/main/java/com/salon/service/DashboardService.java b/src/main/java/com/salon/service/DashboardService.java
+index 3dec423..f52ec43 100644
+--- a/src/main/java/com/salon/service/DashboardService.java
++++ b/src/main/java/com/salon/service/DashboardService.java
+@@ -3,7 +3,6 @@ package com.salon.service;
+ import com.salon.dto.*;
+ import com.salon.entity.*;
+ import com.salon.repository.*;
+-import com.salon.security.SecurityUtil;
+ 
+ import org.springframework.stereotype.Service;
+ 
+@@ -17,25 +16,22 @@ public class DashboardService {
+     private final InvoiceRepository invoiceRepository;
+     private final InvoiceItemRepository invoiceItemRepository;
+     private final ServiceRepository serviceRepository;
+-    private final SalonRepository salonRepository;
++    private final SalonService salonService;
+ 
+     public DashboardService(BookingRepository bookingRepository,
+                             InvoiceRepository invoiceRepository,
+                             InvoiceItemRepository invoiceItemRepository,
+                             ServiceRepository serviceRepository,
+-                            SalonRepository salonRepository) {
++                            SalonService salonService) {
+         this.bookingRepository = bookingRepository;
+         this.invoiceRepository = invoiceRepository;
+         this.invoiceItemRepository = invoiceItemRepository;
+         this.serviceRepository = serviceRepository;
+-        this.salonRepository = salonRepository;
++        this.salonService = salonService;
+     }
+ 
+     public DashboardSummaryResponse getSummary() {
+-
+-        Salon salon = salonRepository.findById(
+-                SecurityUtil.getCurrentSalonId()
+-        ).orElseThrow(() -> new RuntimeException("Salon not found"));
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         LocalDate today = LocalDate.now();
+         LocalDateTime startToday = today.atStartOfDay();
+@@ -43,9 +39,6 @@ public class DashboardService {
+ 
+         LocalDateTime startWeek = today.minusDays(7).atStartOfDay();
+ 
+-        
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-
+         long bookingsToday =
+                 bookingRepository.countBySalon_IdAndAppointmentTimeBetween(
+                         salonId, startToday, endToday);
+@@ -78,23 +71,12 @@ public class DashboardService {
+     }
+ 
+     public List<TopItemResponse> getTopProducts() {
+-        Salon salon = salonRepository.findById(
+-                SecurityUtil.getCurrentSalonId()
+-        ).orElseThrow(() -> new RuntimeException("Salon not found"));
+-        
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-
++        Long salonId = salonService.getCurrentSalon().getId();
+         return invoiceItemRepository.findTopProducts(salonId);
+     }
+ 
+     public List<TopItemResponse> getTopServices() {
+-        Salon salon = salonRepository.findById(
+-                SecurityUtil.getCurrentSalonId()
+-        ).orElseThrow(() -> new RuntimeException("Salon not found"));
+-        
+-        
+-        Long salonId = SecurityUtil.getCurrentSalonId();
++        Long salonId = salonService.getCurrentSalon().getId();
+         return serviceRepository.findTopServices(salonId);
+-
+     }
+ }
+diff --git a/src/main/java/com/salon/service/ProductService.java b/src/main/java/com/salon/service/ProductService.java
+index 2789a8b..b50ceed 100644
+--- a/src/main/java/com/salon/service/ProductService.java
++++ b/src/main/java/com/salon/service/ProductService.java
+@@ -5,8 +5,8 @@ import com.salon.dto.ProductResponse;
+ import com.salon.entity.Product;
+ import com.salon.entity.Salon;
+ import com.salon.repository.ProductRepository;
+-import com.salon.repository.SalonRepository;
+-import com.salon.security.SecurityUtil;
++import com.salon.audit.AuditLogService;
++import com.salon.audit.AuditAction;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+ import org.springframework.stereotype.Service;
+@@ -15,20 +15,21 @@ import org.springframework.stereotype.Service;
+ public class ProductService {
+ 
+     private final ProductRepository productRepository;
+-    private final SalonRepository salonRepository;
++    private final SalonService salonService;
++    private final AuditLogService auditLogService;
+ 
+     public ProductService(ProductRepository productRepository,
+-                          SalonRepository salonRepository) {
++                          SalonService salonService,
++                          AuditLogService auditLogService) {
+         this.productRepository = productRepository;
+-        this.salonRepository = salonRepository;
++        this.salonService = salonService;
++        this.auditLogService = auditLogService;
+     }
+ 
+     // ADMIN
+     public ProductResponse createProduct(ProductRequest request) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Salon salon = salonService.getCurrentSalon();
+ 
+         Product product = new Product();
+         product.setName(request.getName());
+@@ -51,9 +52,7 @@ public class ProductService {
+     // CUSTOMER + ADMIN
+     public Page<ProductResponse> getActiveProducts(Pageable pageable) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return productRepository
+                 .findBySalon_IdAndActiveTrue(salonId, pageable)
+@@ -65,4 +64,28 @@ public class ProductService {
+                         p.getStock()
+                 ));
+     }
++
++    // ADMIN ONLY: soft-delete by deactivating product
++    public ProductResponse deactivateProduct(Long productId) {
++        Salon salon = salonService.getCurrentSalon();
++
++        Product product = productRepository.findByIdAndSalon_Id(productId, salon.getId())
++                .orElseThrow(() -> new RuntimeException("Product not found in this salon"));
++
++        product.setActive(false);
++        product = productRepository.save(product);
++
++        auditLogService.log(
++                AuditAction.DEACTIVATE_PRODUCT,
++                "Admin deactivated product ID " + product.getId()
++        );
++
++        return new ProductResponse(
++                product.getId(),
++                product.getName(),
++                product.getDescription(),
++                product.getPrice(),
++                product.getStock()
++        );
++    }
+ }
+diff --git a/src/main/java/com/salon/service/ReengagementService.java b/src/main/java/com/salon/service/ReengagementService.java
+index ccb89f6..f291e4c 100644
+--- a/src/main/java/com/salon/service/ReengagementService.java
++++ b/src/main/java/com/salon/service/ReengagementService.java
+@@ -1,10 +1,7 @@
+ package com.salon.service;
+ 
+ import com.salon.dto.InactiveCustomerResponse;
+-import com.salon.entity.Salon;
+ import com.salon.repository.BookingRepository;
+-import com.salon.repository.SalonRepository;
+-import com.salon.security.SecurityUtil;
+ 
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+@@ -16,24 +13,21 @@ import java.time.LocalDateTime;
+ public class ReengagementService {
+ 
+     private final BookingRepository bookingRepository;
+-    private final SalonRepository salonRepository;
++    private final SalonService salonService;
+ 
+     public ReengagementService(
+             BookingRepository bookingRepository,
+-            SalonRepository salonRepository) {
++            SalonService salonService) {
+ 
+         this.bookingRepository = bookingRepository;
+-        this.salonRepository = salonRepository;
++        this.salonService = salonService;
+     }
+ 
+     public Page<InactiveCustomerResponse> getInactiveCustomers(
+             int days,
+             Pageable pageable) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         LocalDateTime cutoffDate =
+                 LocalDateTime.now().minusDays(days);
+diff --git a/src/main/java/com/salon/service/SalonService.java b/src/main/java/com/salon/service/SalonService.java
+index 2a40af4..6aeecac 100644
+--- a/src/main/java/com/salon/service/SalonService.java
++++ b/src/main/java/com/salon/service/SalonService.java
+@@ -1,7 +1,10 @@
+ package com.salon.service;
+ 
+ import com.salon.entity.Salon;
++import com.salon.exception.ResourceNotFoundException;
+ import com.salon.repository.SalonRepository;
++import com.salon.security.SecurityUtil;
++import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.stereotype.Service;
+ 
+ import java.time.LocalDateTime;
+@@ -11,10 +14,27 @@ public class SalonService {
+ 
+     private final SalonRepository salonRepository;
+ 
++    /** Default salon name for single-tenant mode */
++    @Value("${salon.default-name:Default}")
++    private String defaultSalonName;
++
+     public SalonService(SalonRepository salonRepository) {
+         this.salonRepository = salonRepository;
+     }
+ 
++    /** Resolve current salon from context (set by JWT) - for tenant-scoped operations */
++    public Salon getCurrentSalon() {
++        String salonName = SecurityUtil.getCurrentSalonName();
++        return salonRepository.findByNameIgnoreCase(salonName)
++                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", salonName));
++    }
++
++    /** Get the single default salon (for single-tenant when no JWT context, e.g. public registration) */
++    public Salon getDefaultSalon() {
++        return salonRepository.findByNameIgnoreCase(defaultSalonName)
++                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", defaultSalonName));
++    }
++
+     public Salon createSalon(Salon salon) {
+         salon.setActive(true);
+         salon.setCreatedAt(LocalDateTime.now());
+diff --git a/src/main/java/com/salon/service/ServiceService.java b/src/main/java/com/salon/service/ServiceService.java
+index 503d642..f990908 100644
+--- a/src/main/java/com/salon/service/ServiceService.java
++++ b/src/main/java/com/salon/service/ServiceService.java
+@@ -7,9 +7,7 @@ import com.salon.dto.ServiceRequest;
+ import com.salon.dto.ServiceResponse;
+ import com.salon.entity.Salon;
+ import com.salon.entity.Service;
+-import com.salon.repository.SalonRepository;
+ import com.salon.repository.ServiceRepository;
+-import com.salon.security.SecurityUtil;
+ import org.springframework.data.domain.Page;
+ import org.springframework.data.domain.Pageable;
+ import com.salon.audit.AuditAction;
+@@ -23,16 +21,16 @@ import java.util.List;
+ public class ServiceService {
+ 
+     private final ServiceRepository serviceRepository;
+-    private final SalonRepository salonRepository;
++    private final SalonService salonService;
+     private final AuditLogService auditLogService;
+ 
+ 
+     public ServiceService(ServiceRepository serviceRepository,
+-            SalonRepository salonRepository,
++            SalonService salonService,
+             AuditLogService auditLogService) {
+ 
+ 			this.serviceRepository = serviceRepository;
+-			this.salonRepository = salonRepository;
++			this.salonService = salonService;
+ 			this.auditLogService = auditLogService;
+ 	}
+ 
+@@ -40,10 +38,7 @@ public class ServiceService {
+     // ADMIN ONLY
+     public ServiceResponse createService(ServiceRequest request) {
+ 
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Salon salon = salonService.getCurrentSalon();
+ 
+         Service service = new Service();
+         service.setName(request.getName());
+@@ -68,12 +63,7 @@ public class ServiceService {
+ 
+     // CUSTOMER + ADMIN
+     public List<ServiceResponse> getActiveServices() {
+-
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+-
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return serviceRepository.findBySalon_IdAndActiveTrue(salonId)
+                 .stream()
+@@ -87,10 +77,7 @@ public class ServiceService {
+ 
+     }
+     public Page<ServiceResponse> getActiveServices(Pageable pageable) {
+-
+-        Long salonId = SecurityUtil.getCurrentSalonId();
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++        Long salonId = salonService.getCurrentSalon().getId();
+ 
+         return serviceRepository.findBySalon_IdAndActiveTrue(salonId, pageable)
+                 .map(s -> new ServiceResponse(
+@@ -100,4 +87,27 @@ public class ServiceService {
+                         s.getDurationInMinutes()
+                 ));
+     }
++
++    // ADMIN ONLY: soft-delete by deactivating service
++    public ServiceResponse deactivateService(Long serviceId) {
++        Salon salon = salonService.getCurrentSalon();
++
++        Service service = serviceRepository.findByIdAndSalonId(serviceId, salon.getId())
++                .orElseThrow(() -> new RuntimeException("Service not found in this salon"));
++
++        service.setActive(false);
++        service = serviceRepository.save(service);
++
++        auditLogService.log(
++                AuditAction.DEACTIVATE_SERVICE,
++                "Admin deactivated service ID " + service.getId()
++        );
++
++        return new ServiceResponse(
++                service.getId(),
++                service.getName(),
++                service.getPrice(),
++                service.getDurationInMinutes()
++        );
++    }
+ }
+diff --git a/src/main/java/com/salon/service/UserService.java b/src/main/java/com/salon/service/UserService.java
+index 5e814f6..3b43b16 100644
+--- a/src/main/java/com/salon/service/UserService.java
++++ b/src/main/java/com/salon/service/UserService.java
+@@ -3,15 +3,24 @@ package com.salon.service;
+ import com.salon.dto.AdminRegisterRequest;
+ import com.salon.dto.CustomerRegisterRequest;
+ import com.salon.entity.*;
++import com.salon.exception.BadRequestException;
++import com.salon.exception.ConflictException;
+ import com.salon.exception.EmailAlreadyExistsException;
++import com.salon.exception.ResourceNotFoundException;
++import com.salon.exception.UnauthorizedException;
+ import com.salon.repository.*;
++import com.salon.service.SupabaseJwtVerifier.SupabaseUserInfo;
+ 
++import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.security.crypto.password.PasswordEncoder;
+ import org.springframework.stereotype.Service;
+ 
+ @Service
+ public class UserService {
+ 
++    @Value("${salon.default-name:Default}")
++    private String defaultSalonName;
++
+     private final UserRepository userRepository;
+     private final RoleRepository roleRepository;
+     private final SalonRepository salonRepository;
+@@ -33,10 +42,12 @@ public class UserService {
+ 
+     // ================= CUSTOMER SELF REGISTRATION =================
+     public User registerCustomerSelf(CustomerRegisterRequest request) {
++        String salonName = (request.getSalonName() != null && !request.getSalonName().isBlank())
++                ? request.getSalonName() : defaultSalonName;
+ 
+         Salon salon = salonRepository
+-                .findByNameIgnoreCase(request.getSalonName())
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++                .findByNameIgnoreCase(salonName)
++                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", salonName));
+ 
+         if (userRepository.existsByEmailAndSalonId(
+                 request.getEmail(), salon.getId())) {
+@@ -56,7 +67,7 @@ public class UserService {
+         customer = userRepository.save(customer);
+ 
+         Role role = roleRepository.findByName("ROLE_CUSTOMER")
+-                .orElseThrow(() -> new RuntimeException("ROLE_CUSTOMER not found"));
++                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_CUSTOMER"));
+ 
+         userRoleRepository.save(new UserRole(customer, role));
+ 
+@@ -64,10 +75,7 @@ public class UserService {
+     }
+ 
+     // ================= ADMIN REGISTERS CUSTOMER =================
+-    public User registerCustomerByAdmin(CustomerRegisterRequest request, Long salonId) {
+-
+-        Salon salon = salonRepository.findById(salonId)
+-                .orElseThrow(() -> new RuntimeException("Salon not found"));
++    public User registerCustomerByAdmin(CustomerRegisterRequest request, Salon salon) {
+ 
+         if (userRepository.existsByEmailAndSalonId(
+                 request.getEmail(), salon.getId())) {
+@@ -87,7 +95,7 @@ public class UserService {
+         customer = userRepository.save(customer);
+ 
+         Role role = roleRepository.findByName("ROLE_CUSTOMER")
+-                .orElseThrow(() -> new RuntimeException("ROLE_CUSTOMER not found"));
++                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_CUSTOMER"));
+ 
+         userRoleRepository.save(new UserRole(customer, role));
+ 
+@@ -96,12 +104,18 @@ public class UserService {
+ 
+     // ================= ADMIN REGISTRATION =================
+     public User registerAdmin(AdminRegisterRequest request) {
+-
+-        // 1∩╕ÅΓâú Create salon (PENDING)
+-        Salon salon = new Salon();
+-        salon.setName(request.getSalonName());
+-        salon.setApprovalStatus(ApprovalStatus.PENDING);
+-        salon = salonRepository.save(salon);
++        // Single-tenant: use default salon name
++        String salonName = (request.getSalonName() != null && !request.getSalonName().isBlank())
++                ? request.getSalonName() : defaultSalonName;
++
++        // 1∩╕ÅΓâú Get or create the (single) salon
++        Salon salon = salonRepository.findByNameIgnoreCase(salonName)
++                .orElseGet(() -> {
++                    Salon newSalon = new Salon();
++                    newSalon.setName(salonName);
++                    newSalon.setApprovalStatus(ApprovalStatus.PENDING);
++                    return salonRepository.save(newSalon);
++                });
+ 
+         // 2∩╕ÅΓâú Check email uniqueness inside salon
+         if (userRepository.existsByEmailAndSalonId(
+@@ -122,7 +136,7 @@ public class UserService {
+ 
+         // 4∩╕ÅΓâú Assign ROLE_ADMIN
+         Role adminRole = roleRepository.findByName("ROLE_ADMIN")
+-                .orElseThrow(() -> new RuntimeException("ROLE_ADMIN not found"));
++                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_ADMIN"));
+ 
+         userRoleRepository.save(new UserRole(admin, adminRole));
+ 
+@@ -131,23 +145,27 @@ public class UserService {
+ 
+     // ================= LOGIN =================
+     public User loginCustomer(String email, String password, String salonName) {
++        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
+ 
+-    	 Salon salon = salonRepository.findByNameIgnoreCase(salonName)
+-    	            .orElseThrow(() -> new RuntimeException("Salon not found"));
++    	 Salon salon = salonRepository.findByNameIgnoreCase(name)
++    	            .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
+ 
+     	    User user = userRepository.findByEmailAndSalon(email, salon)
+-    	            .orElseThrow(() -> new RuntimeException("User not found"));
++    	            .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
+ 
+ 
+         boolean isCustomer = user.getUserRoles().stream()
+                 .anyMatch(ur -> ur.getRole().getName().equals("ROLE_CUSTOMER"));
+ 
+         if (!isCustomer) {
+-            throw new RuntimeException("Not a customer account");
++            throw new BadRequestException("Not a customer account");
+         }
+ 
++        if (user.getPassword() == null) {
++            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
++        }
+         if (!passwordEncoder.matches(password, user.getPassword())) {
+-            throw new RuntimeException("Invalid credentials");
++            throw new UnauthorizedException("Invalid credentials");
+         }
+ 
+         return user;
+@@ -155,12 +173,13 @@ public class UserService {
+ 
+ 
+     public User loginAdmin(String email, String password, String salonName) {
++        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
+ 
+-    	 Salon salon = salonRepository.findByNameIgnoreCase(salonName)
+-    	            .orElseThrow(() -> new RuntimeException("Salon not found"));
++    	 Salon salon = salonRepository.findByNameIgnoreCase(name)
++    	            .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
+ 
+     	    User user = userRepository.findByEmailAndSalon(email, salon)
+-    	            .orElseThrow(() -> new RuntimeException("User not found"));
++    	            .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
+ 
+ 
+ //        boolean isAdmin = user.getUserRoles().stream()
+@@ -170,15 +189,18 @@ public class UserService {
+ //            throw new RuntimeException("Not an admin account");
+ //        }
+ 
++        if (user.getPassword() == null) {
++            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
++        }
+         if (!passwordEncoder.matches(password, user.getPassword())) {
+-            throw new RuntimeException("Invalid credentials");
++            throw new UnauthorizedException("Invalid credentials");
+         }
+         if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
+-            throw new RuntimeException("Admin account not approved yet");
++            throw new BadRequestException("Admin account not approved yet");
+         }
+ 
+         if (user.getSalon().getApprovalStatus() != ApprovalStatus.APPROVED) {
+-            throw new RuntimeException("Salon not approved yet");
++            throw new BadRequestException("Salon not approved yet");
+         }
+ 
+ 
+@@ -188,7 +210,7 @@ public class UserService {
+     public User loginSuperAdmin(String email, String password) {
+ 
+         User user = userRepository.findByEmail(email)
+-                .orElseThrow(() -> new RuntimeException("Invalid credentials"));
++                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
+ 
+         boolean isSuperAdmin = user.getUserRoles().stream()
+                 .anyMatch(ur -> ur.getRole().getName().equals("ROLE_SUPER_ADMIN"));
+@@ -197,12 +219,15 @@ public class UserService {
+             throw new RuntimeException("Not a super admin");
+         }
+ 
++        if (user.getPassword() == null) {
++            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
++        }
+         if (!passwordEncoder.matches(password, user.getPassword())) {
+-            throw new RuntimeException("Invalid credentials");
++            throw new UnauthorizedException("Invalid credentials");
+         }
+ 
+         if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
+-            throw new RuntimeException("Super admin not approved");
++            throw new BadRequestException("Super admin not approved");
+         }
+ 
+         return user;
+@@ -212,6 +237,61 @@ public class UserService {
+ 
+     public User getUserById(Long userId) {
+         return userRepository.findById(userId)
+-                .orElseThrow(() -> new RuntimeException("User not found"));
++                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
++    }
++
++    /**
++     * Find or create user from Supabase OAuth (e.g. Google sign-in).
++     * - If user exists by providerId: return them
++     * - If user exists by email (email provider): link providerId, return them
++     * - If new: create user with salon (salonName required for new users)
++     */
++    public User findOrCreateFromSupabase(SupabaseUserInfo info, String salonName, String roleName) {
++        // 1. Already linked by Supabase provider ID
++        if (userRepository.findByProviderId(info.providerId()).isPresent()) {
++            return userRepository.findByProviderId(info.providerId()).orElseThrow();
++        }
++
++        // 2. Existing user by email - link OAuth provider
++        var existingByEmail = userRepository.findByEmail(info.email());
++        if (existingByEmail.isPresent()) {
++            User user = existingByEmail.get();
++            user.setProviderId(info.providerId());
++            user.setAuthProvider("google");
++            return userRepository.save(user);
++        }
++
++        // 3. New user - use default salon for single-tenant if not provided
++        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
++
++        Salon salon = salonRepository.findByNameIgnoreCase(name)
++                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
++
++        if (userRepository.existsByEmailAndSalonId(info.email(), salon.getId())) {
++            throw new ConflictException("Email already exists in this salon. Try signing in with email/password.");
++        }
++
++        User user = new User();
++        user.setFullName(info.fullName());
++        user.setEmail(info.email());
++        user.setPassword(null);  // OAuth-only, no password
++        user.setProviderId(info.providerId());
++        user.setAuthProvider("google");
++        user.setSalon(salon);
++        user.setActive(true);
++
++        if ("ROLE_ADMIN".equals(roleName)) {
++            user.setApprovalStatus(ApprovalStatus.PENDING);
++        }
++
++        user = userRepository.save(user);
++
++        Role role = roleRepository.findByName(roleName)
++                .orElseGet(() -> roleRepository.findByName("ROLE_CUSTOMER")
++                        .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_CUSTOMER")));
++
++        userRoleRepository.save(new UserRole(user, role));
++
++        return user;
+     }
+ }
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index a92c29d..ad8cd9d 100644
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -1,13 +1,57 @@
+-spring.datasource.url=jdbc:postgresql://localhost:5432/salon_saas
++# ==================== COMMON (Zero-cost stack) ====================
++# DB: Supabase free tier | Cache: Caffeine in-memory | No Redis/SMS/Stripe required
++spring.application.name=salon-saas-api
++
++# Datasource (override per env if needed)
++spring.datasource.url=jdbc:postgresql://db.autxuqyjzbylidpccoyd.supabase.co:5432/postgres?sslmode=require
+ spring.datasource.username=postgres
+-spring.datasource.password=postgres
++spring.datasource.password=KwfPKni2$%-i8LU
+ spring.datasource.driver-class-name=org.postgresql.Driver
+ 
+-spring.jpa.hibernate.ddl-auto=update
+-spring.jpa.show-sql=true
++# Connection pool
++spring.datasource.hikari.maximum-pool-size=10
++spring.datasource.hikari.minimum-idle=2
++spring.datasource.hikari.connection-timeout=30000
++spring.datasource.hikari.idle-timeout=600000
++spring.datasource.hikari.max-lifetime=1800000
++spring.datasource.hikari.transaction-isolation=TRANSACTION_READ_COMMITTED
++
++# JPA
+ spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
++spring.jpa.hibernate.ddl-auto=update
++spring.jpa.show-sql=false
++
++# Flyway (runs before Hibernate when enabled)
++spring.flyway.enabled=true
++spring.flyway.baseline-on-migrate=true
++
++# Server
+ server.port=8081
+ 
++# JWT
+ jwt.secret=VEhJU19JU19NWV9TVVBFUl9TRUNSRVRfSldUX0tFWV8xMjM0NTY3OAAADk=
+ jwt.expiration=259200000
+ 
++# Single-tenant: default salon name (used when salonName not provided in login/register)
++salon.default-name=Default
++
++# Supabase (Google OAuth)
++supabase.url=https://autxuqyjzbylidpccoyd.supabase.co
++supabase.jwt-secret=${SUPABASE_JWT_SECRET:}
++
++# Stripe - low cost: 2.9%+$0.30 per transaction, no monthly fee
++# Get keys from https://dashboard.stripe.com/apikeys (free account)
++stripe.secret-key=${STRIPE_SECRET_KEY:}
++# Create products/prices in Stripe Dashboard, then add Price IDs:
++stripe.price-id.basic=${STRIPE_PRICE_BASIC:}
++stripe.price-id.pro=${STRIPE_PRICE_PRO:}
++stripe.price-id.enterprise=${STRIPE_PRICE_ENTERPRISE:}
++app.frontend-url=${FRONTEND_URL:http://localhost:5173}
++
++# OpenAPI
++springdoc.api-docs.path=/api-docs
++springdoc.swagger-ui.path=/swagger-ui.html
++
++# Actuator
++management.endpoints.web.exposure.include=health,info
++management.endpoint.health.probes.enabled=true

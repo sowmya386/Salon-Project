@@ -7,15 +7,18 @@ public class BookingResponse {
 
     private Long bookingId;
     private String serviceName;
+    private String customerName;
     private LocalDateTime appointmentTime;
     private BookingStatus status;
 
     public BookingResponse(Long bookingId,
                            String serviceName,
+                           String customerName,
                            LocalDateTime appointmentTime,
                            BookingStatus status) {
         this.bookingId = bookingId;
         this.serviceName = serviceName;
+        this.customerName = customerName;
         this.appointmentTime = appointmentTime;
         this.status = status;
     }
@@ -26,6 +29,10 @@ public class BookingResponse {
 
     public String getServiceName() {
         return serviceName;
+    }
+
+    public String getCustomerName() {
+        return customerName;
     }
 
     public LocalDateTime getAppointmentTime() {

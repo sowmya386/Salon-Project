@@ -40,17 +40,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
                 Claims claims = jwtUtil.extractClaims(token);
 
-                Long userId = claims.get("userId", Long.class); // ✅ USER ID
-                Long salonId = claims.get("salonId", Long.class);
+                Long userId = claims.get("userId", Long.class);
+                String salonName = claims.get("salonName", String.class);
                 List<String> roles = claims.get("roles", List.class);
 
                 var authorities = roles.stream()
                         .map(SimpleGrantedAuthority::new)
                         .toList();
 
-                // 🔐 SET SALON CONTEXT
-                if (salonId != null) {
-                    SalonContext.setSalonId(salonId);
+                // Single-tenant: set salon name in context
+                if (salonName != null && !salonName.isBlank()) {
+                    SalonContext.setSalonName(salonName);
                 }
 
                 // 🔐 PRINCIPAL = USER ID (CRITICAL FIX)

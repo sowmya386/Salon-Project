@@ -1,10 +1,7 @@
 package com.salon.service;
 
 import com.salon.dto.InactiveCustomerResponse;
-import com.salon.entity.Salon;
 import com.salon.repository.BookingRepository;
-import com.salon.repository.SalonRepository;
-import com.salon.security.SecurityUtil;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,31 +13,28 @@ import java.time.LocalDateTime;
 public class ReengagementService {
 
     private final BookingRepository bookingRepository;
-    private final SalonRepository salonRepository;
+    private final SalonService salonService;
 
     public ReengagementService(
             BookingRepository bookingRepository,
-            SalonRepository salonRepository) {
+            SalonService salonService) {
 
         this.bookingRepository = bookingRepository;
-        this.salonRepository = salonRepository;
+        this.salonService = salonService;
     }
 
     public Page<InactiveCustomerResponse> getInactiveCustomers(
             int days,
             Pageable pageable) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        String salonName = salonService.getCurrentSalon().getName();
 
         LocalDateTime cutoffDate =
                 LocalDateTime.now().minusDays(days);
 
 
         return bookingRepository
-                .findInactiveCustomers(salonId, cutoffDate, pageable)
+                .findInactiveCustomers(salonName, cutoffDate, pageable)
                 .map(row -> new InactiveCustomerResponse(
                         (Long) row[0],
                         (String) row[1],

@@ -31,27 +31,27 @@ public class SuperAdminController {
         return salonRepository.findByApprovalStatus(ApprovalStatus.PENDING);
     }
 
-    // 2️⃣ Approve salon + admins
-    @PutMapping("/salons/{salonId}/approve")
-    public ResponseEntity<?> approveSalon(@PathVariable Long salonId) {
+ // 2️⃣ Approve salon + admins
+    @PutMapping("/salons/{salonName}/approve")
+    public ResponseEntity<?> approveSalon(@PathVariable String salonName) {
 
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        Salon salon = salonRepository.findByNameIgnoreCase(salonName)
+                .orElseThrow(() -> new RuntimeException("Salon not found: " + salonName));
 
         salon.setApprovalStatus(ApprovalStatus.APPROVED);
         salonRepository.save(salon);
 
-        userRepository.approveAdminsBySalon(salon);
+        userRepository.approveAdminsBySalonName(salon.getName());
 
         return ResponseEntity.ok("Salon and admin approved");
     }
 
     // 3️⃣ Reject salon
-    @PutMapping("/salons/{salonId}/reject")
-    public ResponseEntity<?> rejectSalon(@PathVariable Long salonId) {
+    @PutMapping("/salons/{salonName}/reject")
+    public ResponseEntity<?> rejectSalon(@PathVariable String salonName) {
 
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        Salon salon = salonRepository.findByNameIgnoreCase(salonName)
+                .orElseThrow(() -> new RuntimeException("Salon not found: " + salonName));
 
         salon.setApprovalStatus(ApprovalStatus.REJECTED);
         salonRepository.save(salon);

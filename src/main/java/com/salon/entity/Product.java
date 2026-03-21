@@ -15,11 +15,11 @@ public class Product {
     private String description;
     private Double price;
     private Integer stock;
+    private Integer lowStockThreshold = 5;  // Alert when below this
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "salon_id", nullable = false)
-    private Salon salon;
+    @Column(name = "salon_name", nullable = false)
+    private String salonName;
 
     private LocalDateTime createdAt;
 
@@ -43,11 +43,14 @@ public class Product {
     public Integer getStock() { return stock; }
     public void setStock(Integer stock) { this.stock = stock; }
 
+    public Integer getLowStockThreshold() { return lowStockThreshold; }
+    public void setLowStockThreshold(Integer lowStockThreshold) { this.lowStockThreshold = lowStockThreshold; }
+
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
 
-    public Salon getSalon() { return salon; }
-    public void setSalon(Salon salon) { this.salon = salon; }
+    public String getSalonName() { return salonName; }
+    public void setSalonName(String salonName) { this.salonName = salonName; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

@@ -1,0 +1,27 @@
+﻿[INFO] Scanning for projects...
+[INFO] 
+[INFO] -------------------< com.salon:salon-saas-backend-1 >-------------------
+[INFO] Building salon-saas-backend-1 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.5.0:clean (default-clean) @ salon-saas-backend-1 ---
+[INFO] Deleting D:\projects\salon-saas-backend-1\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ salon-saas-backend-1 ---
+[INFO] Copying 3 resources from src\main\resources to target\classes
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ salon-saas-backend-1 ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 124 source files with javac [debug parameters release 20] to target\classes
+[INFO] /D:/projects/salon-saas-backend-1/src/main/java/com/salon/config/RateLimitConfig.java: Some input files use or override a deprecated API.
+[INFO] /D:/projects/salon-saas-backend-1/src/main/java/com/salon/config/RateLimitConfig.java: Recompile with -Xlint:deprecation for details.
+[INFO] /D:/projects/salon-saas-backend-1/src/main/java/com/salon/security/JwtAuthFilter.java: D:\projects\salon-saas-backend-1\src\main\java\com\salon\security\JwtAuthFilter.java uses unchecked or unsafe operations.
+[INFO] /D:/projects/salon-saas-backend-1/src/main/java/com/salon/security/JwtAuthFilter.java: Recompile with -Xlint:unchecked for details.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  14.097 s
+[INFO] Finished at: 2026-03-20T21:13:28+05:30
+[INFO] ------------------------------------------------------------------------

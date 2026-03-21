@@ -13,13 +13,15 @@ import java.util.Optional;
 public interface UserRepository extends JpaRepository<User, Long> {
 
     // 🔐 LOGIN (FINAL)
-	Optional<User> findByEmailAndSalon(String email, Salon salon);
+	Optional<User> findByEmailAndSalonName(String email, String salonName);
 
     // 🔐 REGISTRATION VALIDATION
-    boolean existsByEmailAndSalonId(String email, Long salonId);
+    boolean existsByEmailAndSalonName(String email, String salonName);
 
     // 🔧 UTIL
     Optional<User> findByEmail(String email);
+
+    Optional<User> findByProviderId(String providerId);
 
     // 👑 SUPER ADMIN APPROVAL
     @Modifying
@@ -27,11 +29,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("""
         UPDATE User u
         SET u.approvalStatus = 'APPROVED'
-        WHERE u.salon = :salon
+        WHERE u.salonName = :salonName
           AND EXISTS (
               SELECT ur FROM UserRole ur
               WHERE ur.user = u AND ur.role.name = 'ROLE_ADMIN'
           )
     """)
-    void approveAdminsBySalon(Salon salon);
+    void approveAdminsBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName);
 }

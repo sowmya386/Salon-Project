@@ -3,14 +3,23 @@ package com.salon.service;
 import com.salon.dto.AdminRegisterRequest;
 import com.salon.dto.CustomerRegisterRequest;
 import com.salon.entity.*;
+import com.salon.exception.BadRequestException;
+import com.salon.exception.ConflictException;
 import com.salon.exception.EmailAlreadyExistsException;
+import com.salon.exception.ResourceNotFoundException;
+import com.salon.exception.UnauthorizedException;
 import com.salon.repository.*;
+import com.salon.service.SupabaseJwtVerifier.SupabaseUserInfo;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
 public class UserService {
+
+    @Value("${salon.default-name:Default}")
+    private String defaultSalonName;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -33,13 +42,15 @@ public class UserService {
 
     // ================= CUSTOMER SELF REGISTRATION =================
     public User registerCustomerSelf(CustomerRegisterRequest request) {
+        String salonName = (request.getSalonName() != null && !request.getSalonName().isBlank())
+                ? request.getSalonName() : defaultSalonName;
 
         Salon salon = salonRepository
-                .findByNameIgnoreCase(request.getSalonName())
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+                .findByNameIgnoreCase(salonName)
+                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", salonName));
 
-        if (userRepository.existsByEmailAndSalonId(
-                request.getEmail(), salon.getId())) {
+        if (userRepository.existsByEmailAndSalonName(
+                request.getEmail(), salon.getName())) {
             throw new EmailAlreadyExistsException(
                     "Email already exists in this salon"
             );
@@ -50,13 +61,13 @@ public class UserService {
         customer.setEmail(request.getEmail());
         customer.setPassword(passwordEncoder.encode(request.getPassword()));
         customer.setPhone(request.getPhone());
-        customer.setSalon(salon);
+        customer.setSalonName(salon.getName());
         customer.setActive(true);
 
         customer = userRepository.save(customer);
 
         Role role = roleRepository.findByName("ROLE_CUSTOMER")
-                .orElseThrow(() -> new RuntimeException("ROLE_CUSTOMER not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_CUSTOMER"));
 
         userRoleRepository.save(new UserRole(customer, role));
 
@@ -64,13 +75,10 @@ public class UserService {
     }
 
     // ================= ADMIN REGISTERS CUSTOMER =================
-    public User registerCustomerByAdmin(CustomerRegisterRequest request, Long salonId) {
+    public User registerCustomerByAdmin(CustomerRegisterRequest request, Salon salon) {
 
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
-
-        if (userRepository.existsByEmailAndSalonId(
-                request.getEmail(), salon.getId())) {
+        if (userRepository.existsByEmailAndSalonName(
+                request.getEmail(), salon.getName())) {
             throw new EmailAlreadyExistsException(
                     "Email already exists in this salon"
             );
@@ -81,13 +89,13 @@ public class UserService {
         customer.setEmail(request.getEmail());
         customer.setPassword(passwordEncoder.encode(request.getPassword()));
         customer.setPhone(request.getPhone());
-        customer.setSalon(salon);
+        customer.setSalonName(salon.getName());
         customer.setActive(true);
 
         customer = userRepository.save(customer);
 
         Role role = roleRepository.findByName("ROLE_CUSTOMER")
-                .orElseThrow(() -> new RuntimeException("ROLE_CUSTOMER not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_CUSTOMER"));
 
         userRoleRepository.save(new UserRole(customer, role));
 
@@ -96,16 +104,22 @@ public class UserService {
 
     // ================= ADMIN REGISTRATION =================
     public User registerAdmin(AdminRegisterRequest request) {
+        // Single-tenant: use default salon name
+        String salonName = (request.getSalonName() != null && !request.getSalonName().isBlank())
+                ? request.getSalonName() : defaultSalonName;
 
-        // 1️⃣ Create salon (PENDING)
-        Salon salon = new Salon();
-        salon.setName(request.getSalonName());
-        salon.setApprovalStatus(ApprovalStatus.PENDING);
-        salon = salonRepository.save(salon);
+        // 1️⃣ Get or create the (single) salon
+        Salon salon = salonRepository.findByNameIgnoreCase(salonName)
+                .orElseGet(() -> {
+                    Salon newSalon = new Salon();
+                    newSalon.setName(salonName);
+                    newSalon.setApprovalStatus(ApprovalStatus.PENDING);
+                    return salonRepository.save(newSalon);
+                });
 
         // 2️⃣ Check email uniqueness inside salon
-        if (userRepository.existsByEmailAndSalonId(
-                request.getEmail(), salon.getId())) {
+        if (userRepository.existsByEmailAndSalonName(
+                request.getEmail(), salon.getName())) {
             throw new RuntimeException("Email already exists for this salon");
         }
 
@@ -115,14 +129,14 @@ public class UserService {
         admin.setEmail(request.getEmail());
         admin.setPassword(passwordEncoder.encode(request.getPassword()));
         admin.setActive(true);
-        admin.setSalon(salon);
+        admin.setSalonName(salon.getName());
         admin.setApprovalStatus(ApprovalStatus.PENDING);
 
         admin = userRepository.save(admin);
 
         // 4️⃣ Assign ROLE_ADMIN
         Role adminRole = roleRepository.findByName("ROLE_ADMIN")
-                .orElseThrow(() -> new RuntimeException("ROLE_ADMIN not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_ADMIN"));
 
         userRoleRepository.save(new UserRole(admin, adminRole));
 
@@ -131,23 +145,27 @@ public class UserService {
 
     // ================= LOGIN =================
     public User loginCustomer(String email, String password, String salonName) {
+        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
 
-    	 Salon salon = salonRepository.findByNameIgnoreCase(salonName)
-    	            .orElseThrow(() -> new RuntimeException("Salon not found"));
+    	 Salon salon = salonRepository.findByNameIgnoreCase(name)
+    	            .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
 
-    	    User user = userRepository.findByEmailAndSalon(email, salon)
-    	            .orElseThrow(() -> new RuntimeException("User not found"));
+    	    User user = userRepository.findByEmailAndSalonName(email, salon.getName())
+    	            .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
 
 
         boolean isCustomer = user.getUserRoles().stream()
                 .anyMatch(ur -> ur.getRole().getName().equals("ROLE_CUSTOMER"));
 
         if (!isCustomer) {
-            throw new RuntimeException("Not a customer account");
+            throw new BadRequestException("Not a customer account");
         }
 
+        if (user.getPassword() == null) {
+            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
+        }
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         return user;
@@ -155,12 +173,13 @@ public class UserService {
 
 
     public User loginAdmin(String email, String password, String salonName) {
+        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
 
-    	 Salon salon = salonRepository.findByNameIgnoreCase(salonName)
-    	            .orElseThrow(() -> new RuntimeException("Salon not found"));
+    	 Salon salon = salonRepository.findByNameIgnoreCase(name)
+    	            .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
 
-    	    User user = userRepository.findByEmailAndSalon(email, salon)
-    	            .orElseThrow(() -> new RuntimeException("User not found"));
+    	    User user = userRepository.findByEmailAndSalonName(email, salon.getName())
+    	            .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
 
 
 //        boolean isAdmin = user.getUserRoles().stream()
@@ -170,15 +189,18 @@ public class UserService {
 //            throw new RuntimeException("Not an admin account");
 //        }
 
+        if (user.getPassword() == null) {
+            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
+        }
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
         if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new RuntimeException("Admin account not approved yet");
+            throw new BadRequestException("Admin account not approved yet");
         }
 
-        if (user.getSalon().getApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new RuntimeException("Salon not approved yet");
+        if (salon.getApprovalStatus() != ApprovalStatus.APPROVED) {
+            throw new BadRequestException("Salon not approved yet");
         }
 
 
@@ -188,7 +210,7 @@ public class UserService {
     public User loginSuperAdmin(String email, String password) {
 
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+                .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
 
         boolean isSuperAdmin = user.getUserRoles().stream()
                 .anyMatch(ur -> ur.getRole().getName().equals("ROLE_SUPER_ADMIN"));
@@ -197,12 +219,15 @@ public class UserService {
             throw new RuntimeException("Not a super admin");
         }
 
+        if (user.getPassword() == null) {
+            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
+        }
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new RuntimeException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new RuntimeException("Super admin not approved");
+            throw new BadRequestException("Super admin not approved");
         }
 
         return user;
@@ -212,6 +237,50 @@ public class UserService {
 
     public User getUserById(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+    }
+
+    public User findOrCreateFromSupabase(SupabaseUserInfo info, String salonName, String roleName) {
+        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
+
+        Salon salon = salonRepository.findByNameIgnoreCase(name)
+                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
+
+        // Find by email and salonName
+        var existingByEmail = userRepository.findByEmailAndSalonName(info.email(), salon.getName());
+        if (existingByEmail.isPresent()) {
+            User user = existingByEmail.get();
+            // Link OAuth provider if not already linked
+            if (user.getProviderId() == null || !user.getProviderId().equals(info.providerId())) {
+                user.setProviderId(info.providerId());
+                user.setAuthProvider("google");
+                user = userRepository.save(user);
+            }
+            return user;
+        }
+
+        // New user
+        User user = new User();
+        user.setFullName(info.fullName());
+        user.setEmail(info.email());
+        user.setPassword(null);  // OAuth-only, no password
+        user.setProviderId(info.providerId());
+        user.setAuthProvider("google");
+        user.setSalonName(salon.getName());
+        user.setActive(true);
+
+        if ("ROLE_ADMIN".equals(roleName)) {
+            user.setApprovalStatus(ApprovalStatus.PENDING);
+        }
+
+        user = userRepository.save(user);
+
+        Role role = roleRepository.findByName(roleName)
+                .orElseGet(() -> roleRepository.findByName("ROLE_CUSTOMER")
+                        .orElseThrow(() -> new ResourceNotFoundException("Role", "name", "ROLE_CUSTOMER")));
+
+        userRoleRepository.save(new UserRole(user, role));
+
+        return user;
     }
 }

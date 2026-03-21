@@ -4,7 +4,10 @@ import com.salon.dto.*;
 import com.salon.entity.User;
 import com.salon.security.JwtUtil;
 import com.salon.service.PasswordResetService;
+import com.salon.service.SupabaseJwtVerifier;
 import com.salon.service.UserService;
+import com.salon.repository.SalonRepository;
+import com.salon.entity.Salon;
 
 import jakarta.validation.Valid;
 
@@ -20,14 +23,20 @@ public class AuthController {
     private final UserService userService;
     private final JwtUtil jwtUtil;
     private final PasswordResetService passwordResetService;
+    private final SupabaseJwtVerifier supabaseJwtVerifier;
+    private final SalonRepository salonRepository;
 
     public AuthController(UserService userService,
                           JwtUtil jwtUtil,
-                          PasswordResetService passwordResetService) {
+                          PasswordResetService passwordResetService,
+                          SupabaseJwtVerifier supabaseJwtVerifier,
+                          SalonRepository salonRepository) {
 
         this.userService = userService;
         this.jwtUtil = jwtUtil;
         this.passwordResetService = passwordResetService;
+        this.supabaseJwtVerifier = supabaseJwtVerifier;
+        this.salonRepository = salonRepository;
     }
 
     // ================= ADMIN REGISTRATION =================
@@ -38,7 +47,13 @@ public class AuthController {
         userService.registerAdmin(request);
         return ResponseEntity.ok("Admin registered successfully");
     }
-
+ // ================= CUSTOMER REGISTRATION =================
+    @PostMapping("/customers/register")
+    public ResponseEntity<?> registerCustomer(
+            @Valid @RequestBody CustomerRegisterRequest request) {
+        userService.registerCustomerSelf(request); // ✅ method exists in UserService
+        return ResponseEntity.ok("Customer registered successfully");
+    }
 
     // ================= ADMIN LOGIN =================
     @PostMapping("/admin/login")
@@ -59,7 +74,7 @@ public class AuthController {
         String token = jwtUtil.generateToken(
                 admin.getId(),
                 admin.getEmail(),
-                admin.getSalon().getId(),
+                admin.getSalonName(),
                 roles
         );
 
@@ -86,7 +101,7 @@ public class AuthController {
         String token = jwtUtil.generateToken(
                 customer.getId(),
                 customer.getEmail(),
-                customer.getSalon().getId(),
+                customer.getSalonName(),
                 roles
         );
 
@@ -118,6 +133,56 @@ public class AuthController {
     }
 
 
+
+    // ================= SUPABASE / GOOGLE OAUTH =================
+    /**
+     * Exchange Supabase access token (from Google OAuth sign-in) for salon JWT.
+     * Frontend: supabase.auth.signInWithOAuth({ provider: 'google' }) → session.access_token
+     * Send access_token here with optional salonName (required for new customers).
+     */
+    @PostMapping("/supabase/exchange")
+    public ResponseEntity<LoginResponse> supabaseExchange(
+            @Valid @RequestBody SupabaseExchangeRequest request) {
+
+        var info = supabaseJwtVerifier.verifyAndExtract(request.getAccessToken());
+
+        User user = userService.findOrCreateFromSupabase(
+                info,
+                request.getSalonName(),
+                request.getRole() != null ? request.getRole() : "ROLE_CUSTOMER"
+        );
+
+        // Admin approval check (same as email/password login)
+        boolean isAdmin = user.getUserRoles().stream()
+                .anyMatch(ur -> "ROLE_ADMIN".equals(ur.getRole().getName()));
+        if (isAdmin) {
+            if (user.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
+                throw new RuntimeException("Admin account not approved yet");
+            }
+            if (user.getSalonName() != null) {
+                Salon salon = salonRepository.findByNameIgnoreCase(user.getSalonName()).orElseThrow();
+                if (salon.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
+                    throw new RuntimeException("Salon not approved yet");
+                }
+            }
+        }
+
+        List<String> roles = user.getUserRoles()
+                .stream()
+                .map(ur -> ur.getRole().getName())
+                .toList();
+
+        String salonName = user.getSalonName();
+
+        String token = jwtUtil.generateToken(
+                user.getId(),
+                user.getEmail(),
+                salonName,
+                roles
+        );
+
+        return ResponseEntity.ok(new LoginResponse(token));
+    }
 
     // ================= FORGOT PASSWORD =================
     @PostMapping("/forgot-password")

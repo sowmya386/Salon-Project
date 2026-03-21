@@ -30,21 +30,12 @@ public class SecurityUtil {
 	    return (Long) auth.getPrincipal();
 	}
 
-    // ================= CURRENT SALON =================
-    public static Long getCurrentSalonId() {
-
-        Long salonId = SalonContext.getSalonId();
-
-        if (salonId == null) {
-            throw new RuntimeException("SalonId not found in context");
+    // ================= CURRENT SALON (single-tenant, by name) =================
+    public static String getCurrentSalonName() {
+        String salonName = SalonContext.getSalonName();
+        if (salonName == null || salonName.isBlank()) {
+            throw new RuntimeException("Salon name not found in context");
         }
-
-        return salonId;
-    }
-
-    // ================= DO NOT USE =================
-    public static void setCurrentUser(Long userId, Long salonId) {
-        // intentionally empty
-        // context is set ONLY in JwtAuthFilter
+        return salonName;
     }
 }

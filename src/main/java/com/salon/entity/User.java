@@ -9,8 +9,11 @@ import jakarta.persistence.*;
 
 
 @Entity
-@Table(name = "users")
-
+@Table(name = "users", indexes = {
+        @Index(name = "idx_users_salon_name", columnList = "salon_name"),
+        @Index(name = "idx_users_email", columnList = "email"),
+        @Index(name = "idx_users_provider_id", columnList = "provider_id")
+})
 public class User {
 
 	    @Id
@@ -23,11 +26,19 @@ public class User {
 	    @Column(nullable = false)
 	    private String email;
 
-	    @Column(unique = true)
-	    private String phone;
+    @Column(unique = true)
+    private String phone;
 
-	    @Column(nullable = false)
-	    private String password;
+    @Column
+    private String password;  // nullable for OAuth-only users (e.g. Google sign-in)
+
+    /** Supabase/auth provider user ID (e.g. UUID from Supabase) */
+    @Column(unique = true)
+    private String providerId;
+
+    /** Auth provider: "email", "google", etc. */
+    @Column
+    private String authProvider = "email";
 
 	    @Column(nullable = false)
 	    private boolean active = true;
@@ -35,9 +46,8 @@ public class User {
 	    @Column(nullable = false)
 	    private LocalDateTime createdAt = LocalDateTime.now();
 
-	    @ManyToOne
-	    @JoinColumn(name = "salon_id")
-	    private Salon salon;
+	    @Column(name = "salon_name", nullable = false)
+	    private String salonName;
 
 	    @Enumerated(EnumType.STRING)
 	    @Column(nullable = false)
@@ -45,6 +55,10 @@ public class User {
 
 	    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
 	    private List<UserRole> userRoles = new ArrayList<>();
+
+	    /** Loyalty points (customers only) - 1 point per $1 spent, redeemable */
+	    @Column
+	    private Integer loyaltyPoints = 0;
 
     public ApprovalStatus getApprovalStatus() {
         return approvalStatus;
@@ -103,6 +117,22 @@ public class User {
         this.password = password;
     }
 
+    public String getProviderId() {
+        return providerId;
+    }
+
+    public void setProviderId(String providerId) {
+        this.providerId = providerId;
+    }
+
+    public String getAuthProvider() {
+        return authProvider;
+    }
+
+    public void setAuthProvider(String authProvider) {
+        this.authProvider = authProvider;
+    }
+
     public boolean isActive() {
         return active;
     }
@@ -115,12 +145,12 @@ public class User {
         return createdAt;
     }
     
-    public Salon getSalon() {
-        return salon;
+    public String getSalonName() {
+        return salonName;
     }
 
-    public void setSalon(Salon salon) {
-        this.salon = salon;
+    public void setSalonName(String salonName) {
+        this.salonName = salonName;
     }
     
     public List<UserRole> getUserRoles() {
@@ -129,9 +159,8 @@ public class User {
 
 	public void setCreatedAt(LocalDateTime now) {
 		this.createdAt = LocalDateTime.now();
-		
 	}
 
-
-    
+	public Integer getLoyaltyPoints() { return loyaltyPoints; }
+	public void setLoyaltyPoints(Integer loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
 }

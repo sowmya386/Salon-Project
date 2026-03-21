@@ -3,7 +3,6 @@ package com.salon.service;
 import com.salon.dto.*;
 import com.salon.entity.*;
 import com.salon.repository.*;
-import com.salon.security.SecurityUtil;
 
 import org.springframework.stereotype.Service;
 
@@ -17,25 +16,22 @@ public class DashboardService {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceItemRepository invoiceItemRepository;
     private final ServiceRepository serviceRepository;
-    private final SalonRepository salonRepository;
+    private final SalonService salonService;
 
     public DashboardService(BookingRepository bookingRepository,
                             InvoiceRepository invoiceRepository,
                             InvoiceItemRepository invoiceItemRepository,
                             ServiceRepository serviceRepository,
-                            SalonRepository salonRepository) {
+                            SalonService salonService) {
         this.bookingRepository = bookingRepository;
         this.invoiceRepository = invoiceRepository;
         this.invoiceItemRepository = invoiceItemRepository;
         this.serviceRepository = serviceRepository;
-        this.salonRepository = salonRepository;
+        this.salonService = salonService;
     }
 
     public DashboardSummaryResponse getSummary() {
-
-        Salon salon = salonRepository.findById(
-                SecurityUtil.getCurrentSalonId()
-        ).orElseThrow(() -> new RuntimeException("Salon not found"));
+        String salonName = salonService.getCurrentSalon().getName();
 
         LocalDate today = LocalDate.now();
         LocalDateTime startToday = today.atStartOfDay();
@@ -43,30 +39,27 @@ public class DashboardService {
 
         LocalDateTime startWeek = today.minusDays(7).atStartOfDay();
 
-        
-        Long salonId = SecurityUtil.getCurrentSalonId();
-
         long bookingsToday =
-                bookingRepository.countBySalon_IdAndAppointmentTimeBetween(
-                        salonId, startToday, endToday);
+                bookingRepository.countBySalonNameAndAppointmentTimeBetween(
+                        salonName, startToday, endToday);
 
         long completed =
-                bookingRepository.countBySalon_IdAndStatus(
-                        salonId, BookingStatus.COMPLETED);
+                bookingRepository.countBySalonNameAndStatus(
+                        salonName, BookingStatus.COMPLETED);
 
         
 
         long bookingsThisWeek =
-        		 bookingRepository.countBySalon_IdAndAppointmentTimeBetween(
-                		salonId, startWeek, endToday);
+        		 bookingRepository.countBySalonNameAndAppointmentTimeBetween(
+                		salonName, startWeek, endToday);
 
         
 
         long cancelled =
-        		 bookingRepository.countBySalon_IdAndStatus(
-                		salonId, BookingStatus.CANCELLED);
+        		 bookingRepository.countBySalonNameAndStatus(
+                		salonName, BookingStatus.CANCELLED);
 
-        double revenue = invoiceRepository.getTotalRevenue(salonId);
+        double revenue = invoiceRepository.getTotalRevenue(salonName);
 
         return new DashboardSummaryResponse(
                 bookingsToday,
@@ -78,23 +71,12 @@ public class DashboardService {
     }
 
     public List<TopItemResponse> getTopProducts() {
-        Salon salon = salonRepository.findById(
-                SecurityUtil.getCurrentSalonId()
-        ).orElseThrow(() -> new RuntimeException("Salon not found"));
-        
-        Long salonId = SecurityUtil.getCurrentSalonId();
-
-        return invoiceItemRepository.findTopProducts(salonId);
+        String salonName = salonService.getCurrentSalon().getName();
+        return invoiceItemRepository.findTopProducts(salonName);
     }
 
     public List<TopItemResponse> getTopServices() {
-        Salon salon = salonRepository.findById(
-                SecurityUtil.getCurrentSalonId()
-        ).orElseThrow(() -> new RuntimeException("Salon not found"));
-        
-        
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        return serviceRepository.findTopServices(salonId);
-
+        String salonName = salonService.getCurrentSalon().getName();
+        return serviceRepository.findTopServices(salonName);
     }
 }

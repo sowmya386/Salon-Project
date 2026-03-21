@@ -22,7 +22,7 @@ public class BillingService {
     private final BookingRepository bookingRepository;
     private final ProductRepository productRepository;
     private final ServiceRepository serviceRepository;
-    private final SalonRepository salonRepository;
+    private final SalonService salonService;
     private final AuditLogService auditLogService;
     private final UserRepository userRepository;
 
@@ -32,7 +32,7 @@ public class BillingService {
             BookingRepository bookingRepository,
             ProductRepository productRepository,
             ServiceRepository serviceRepository,
-            SalonRepository salonRepository,
+            SalonService salonService,
             AuditLogService auditLogService,
             UserRepository userRepository) {
 
@@ -41,7 +41,7 @@ public class BillingService {
         this.bookingRepository = bookingRepository;
         this.productRepository = productRepository;
         this.serviceRepository = serviceRepository;
-        this.salonRepository = salonRepository;
+        this.salonService = salonService;
         this.auditLogService = auditLogService;
         this.userRepository = userRepository;
     }
@@ -49,15 +49,14 @@ public class BillingService {
     @Transactional
     public InvoiceResponse createInvoice(BillingRequest request) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        Salon salon = salonService.getCurrentSalon();
+        String salonName = salon.getName();
         Long customerId = SecurityUtil.getCurrentUserId();
         User customer = userRepository.findById(customerId).get();
         
         
         Invoice invoice = new Invoice();
-        invoice.setSalon(salon);
+        invoice.setSalonName(salonName);
         invoice.setPaymentMode(PaymentMode.valueOf(request.getPaymentMode()));
         invoice.setCustomer(customer);  
         
@@ -66,7 +65,7 @@ public class BillingService {
         // Attach booking if present
         if (request.getBookingId() != null) {
         	Booking booking = bookingRepository
-        	        .findByIdAndSalonId(request.getBookingId(), salonId)
+        	        .findByIdAndSalonName(request.getBookingId(), salonName)
         	        .orElseThrow(() -> new RuntimeException("Booking not found"));
         	
 
@@ -91,7 +90,7 @@ public class BillingService {
             if (itemReq.getItemType().equals("SERVICE")) {
 
             	Service service = serviceRepository
-            	        .findByIdAndSalonId(itemReq.getItemId(), salonId)
+            	        .findByIdAndSalonName(itemReq.getItemId(), salonName)
             	        .orElseThrow(() -> new RuntimeException("Service not found"));
 
                 item.setItemName(service.getName());
@@ -102,7 +101,7 @@ public class BillingService {
             } else if (itemReq.getItemType().equals("PRODUCT")) {
 
             	Product product = productRepository
-            	        .findByIdAndSalon_Id(itemReq.getItemId(), salonId)
+            	        .findByIdAndSalonName(itemReq.getItemId(), salonName)
             	        .orElseThrow(() -> new RuntimeException("Product not found"));
 
                 if (product.getStock() < itemReq.getQuantity()) {
@@ -153,12 +152,9 @@ public class BillingService {
         );
     }
     public Page<InvoiceResponse> getSalonInvoices(Pageable pageable) {
+        String salonName = salonService.getCurrentSalon().getName();
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
-
-        return invoiceRepository.findBySalon_Id(salonId, pageable)
+        return invoiceRepository.findBySalonName(salonName, pageable)
                 .map(invoice -> new InvoiceResponse(
                         invoice.getId(),
                         invoice.getTotalAmount(),
@@ -176,18 +172,11 @@ public class BillingService {
                 ));
     }
     public Page<InvoiceResponse> getCustomerInvoices(Pageable pageable) {
-
         Long customerId = SecurityUtil.getCurrentUserId();
-        Long salonId = SecurityUtil.getCurrentSalonId();
-
-        User customer = userRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
-
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        String salonName = salonService.getCurrentSalon().getName();
 
         return invoiceRepository
-                .findByCustomer_IdAndSalon_Id(customerId, salonId, pageable)
+                .findByCustomer_IdAndSalonName(customerId, salonName, pageable)
                 .map(invoice -> new InvoiceResponse(
                         invoice.getId(),
                         invoice.getTotalAmount(),

@@ -7,9 +7,7 @@ import com.salon.dto.ServiceRequest;
 import com.salon.dto.ServiceResponse;
 import com.salon.entity.Salon;
 import com.salon.entity.Service;
-import com.salon.repository.SalonRepository;
 import com.salon.repository.ServiceRepository;
-import com.salon.security.SecurityUtil;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import com.salon.audit.AuditAction;
@@ -23,16 +21,16 @@ import java.util.List;
 public class ServiceService {
 
     private final ServiceRepository serviceRepository;
-    private final SalonRepository salonRepository;
+    private final SalonService salonService;
     private final AuditLogService auditLogService;
 
 
     public ServiceService(ServiceRepository serviceRepository,
-            SalonRepository salonRepository,
+            SalonService salonService,
             AuditLogService auditLogService) {
 
 			this.serviceRepository = serviceRepository;
-			this.salonRepository = salonRepository;
+			this.salonService = salonService;
 			this.auditLogService = auditLogService;
 	}
 
@@ -40,16 +38,13 @@ public class ServiceService {
     // ADMIN ONLY
     public ServiceResponse createService(ServiceRequest request) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
+        Salon salon = salonService.getCurrentSalon();
 
         Service service = new Service();
         service.setName(request.getName());
         service.setPrice(request.getPrice());
         service.setDurationInMinutes(request.getDurationInMinutes());
-        service.setSalon(salon);
+        service.setSalonName(salon.getName());
 
         service = serviceRepository.save(service);
         auditLogService.log(
@@ -68,14 +63,9 @@ public class ServiceService {
 
     // CUSTOMER + ADMIN
     public List<ServiceResponse> getActiveServices() {
+        String salonName = salonService.getCurrentSalon().getName();
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
-
-
-        return serviceRepository.findBySalon_IdAndActiveTrue(salonId)
+        return serviceRepository.findBySalonNameAndActiveTrue(salonName)
                 .stream()
                 .map(s -> new ServiceResponse(
                         s.getId(),
@@ -87,17 +77,37 @@ public class ServiceService {
 
     }
     public Page<ServiceResponse> getActiveServices(Pageable pageable) {
+        String salonName = salonService.getCurrentSalon().getName();
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
-
-        return serviceRepository.findBySalon_IdAndActiveTrue(salonId, pageable)
+        return serviceRepository.findBySalonNameAndActiveTrue(salonName, pageable)
                 .map(s -> new ServiceResponse(
                         s.getId(),
                         s.getName(),
                         s.getPrice(),
                         s.getDurationInMinutes()
                 ));
+    }
+
+    // ADMIN ONLY: soft-delete by deactivating service
+    public ServiceResponse deactivateService(Long serviceId) {
+        Salon salon = salonService.getCurrentSalon();
+
+        Service service = serviceRepository.findByIdAndSalonName(serviceId, salon.getName())
+                .orElseThrow(() -> new RuntimeException("Service not found in this salon"));
+
+        service.setActive(false);
+        service = serviceRepository.save(service);
+
+        auditLogService.log(
+                AuditAction.DEACTIVATE_SERVICE,
+                "Admin deactivated service ID " + service.getId()
+        );
+
+        return new ServiceResponse(
+                service.getId(),
+                service.getName(),
+                service.getPrice(),
+                service.getDurationInMinutes()
+        );
     }
 }

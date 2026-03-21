@@ -1,13 +1,14 @@
 package com.salon.controller;
 
+import com.salon.security.SecurityUtil;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.salon.security.SecurityUtil;
-
+/** Test endpoints - only active in dev profile */
 @RestController
+@Profile("dev")
 public class TestController {
 
     @PreAuthorize("hasRole('CUSTOMER')")
@@ -22,23 +23,12 @@ public class TestController {
         return "Admin role access OK";
     }
     
+    @PreAuthorize("hasAnyRole('ADMIN','CUSTOMER')")
     @GetMapping("/api/test/salon")
     public String testSalon() {
-        Long salonId = SecurityUtil.getCurrentSalonId();
-        return "Salon ID from JWT = " + salonId;
+        String salonName = SecurityUtil.getCurrentSalonName();
+        return "Salon name from JWT = " + salonName;
     }
-    
-  
-
-        @GetMapping("/api/admin")
-        public String adminTest(@RequestAttribute("salonId") Long salonId) {
-            return "ADMIN JWT OK | salonId = " + salonId;
-        }
-
-        @GetMapping("/api/c")
-        public String customerTest(@RequestAttribute("salonId") Long salonId) {
-            return "CUSTOMER JWT OK | salonId = " + salonId;
-        }
    
 
 }

@@ -31,14 +31,14 @@ public class JwtUtil {
     public String generateToken(
             Long userId,
             String email,
-            Long salonId,
+            String salonName,
             List<String> roles
     ) {
 
         return Jwts.builder()
                 .setSubject(email)               // metadata ONLY
                 .claim("userId", userId)         // identity
-                .claim("salonId", salonId)       // tenant
+                .claim("salonName", salonName)   // tenant (single-tenant by name)
                 .claim("roles", roles)           // authorization
                 .setIssuedAt(new Date())
                 .setExpiration(

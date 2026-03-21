@@ -13,11 +13,11 @@ import java.util.Optional;
 
 public interface ServiceRepository extends JpaRepository<Service, Long> {
 
-	List<Service> findBySalon_IdAndActiveTrue(Long salonId);
+	List<Service> findBySalonNameAndActiveTrue(String salonName);
 
-	Page<Service> findBySalon_IdAndActiveTrue(Long salonId, Pageable pageable);
+	Page<Service> findBySalonNameAndActiveTrue(String salonName, Pageable pageable);
 
-    Optional<Service> findByIdAndSalonId(Long id, Long salonId);
+    Optional<Service> findByIdAndSalonName(Long id, String salonName);
 
     // ================= TOP SERVICES (DASHBOARD) =================
     @Query("""
@@ -26,11 +26,11 @@ public interface ServiceRepository extends JpaRepository<Service, Long> {
     	        COUNT(b)
     	    )
     	    FROM Booking b
-    	    WHERE b.salon.id = :salonId
+    	    WHERE b.salonName = :salonName
     	      AND b.status = 'COMPLETED'
     	    GROUP BY b.service.name
     	    ORDER BY COUNT(b) DESC
     	""")
-    	List<TopItemResponse> findTopServices(Long salonId);
+    	List<TopItemResponse> findTopServices(@org.springframework.data.repository.query.Param("salonName") String salonName);
 
 }

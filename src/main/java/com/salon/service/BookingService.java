@@ -14,6 +14,7 @@ import com.salon.repository.SalonRepository;
 import com.salon.repository.ServiceRepository;
 import com.salon.repository.UserRepository;
 import com.salon.security.SecurityUtil;
+import com.salon.service.SalonService;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -29,41 +30,41 @@ public class BookingService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final SalonRepository salonRepository;
+    private final SalonService salonService;
 
     public BookingService(
             BookingRepository bookingRepository,
             ServiceRepository serviceRepository,
             UserRepository userRepository,
             AuditLogService auditLogService,
-            SalonRepository salonRepository
+            SalonRepository salonRepository,
+            SalonService salonService
     ) {
         this.bookingRepository = bookingRepository;
         this.serviceRepository = serviceRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
-        this.salonRepository=salonRepository;
+        this.salonRepository = salonRepository;
+        this.salonService = salonService;
     }
 
     // ================= CREATE BOOKING =================
     public BookingResponse createBooking(BookingRequest request) {
 
         Long customerId = SecurityUtil.getCurrentUserId();
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        Salon salon = salonService.getCurrentSalon();
 
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Customer not found"));
-        
-        Salon salon = salonRepository.findById(salonId)
-                .orElseThrow(() -> new RuntimeException("Salon not found"));
 
         Service service = serviceRepository
-                .findByIdAndSalonId(request.getServiceId(), salonId)
+                .findByIdAndSalonName(request.getServiceId(), salon.getName())
                 .orElseThrow(() -> new RuntimeException("Service not found in this salon"));
 
         Booking booking = new Booking();
         booking.setCustomer(customer);
         booking.setService(service);
-        booking.setSalon(salon);
+        booking.setSalonName(salon.getName());
         booking.setAppointmentTime(request.getAppointmentTime());
         booking.setStatus(BookingStatus.BOOKED);
 
@@ -81,10 +82,10 @@ public class BookingService {
     public List<BookingResponse> getCustomerBookings() {
 
         Long customerId = SecurityUtil.getCurrentUserId();
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        String salonName = salonService.getCurrentSalon().getName();
 
         return bookingRepository
-                .findByCustomerIdAndSalonId(customerId, salonId)
+                .findByCustomer_IdAndSalonName(customerId, salonName)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -93,20 +94,20 @@ public class BookingService {
     public Page<BookingResponse> getCustomerBookings(Pageable pageable) {
 
         Long customerId = SecurityUtil.getCurrentUserId();
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        String salonName = salonService.getCurrentSalon().getName();
 
         return bookingRepository
-                .findByCustomerIdAndSalonId(customerId, salonId, pageable)
+                .findByCustomer_IdAndSalonName(customerId, salonName, pageable)
                 .map(this::mapToResponse);
     }
 
     
     public List<BookingResponse> getSalonBookings() {
 
-    	Long salonId = SecurityUtil.getCurrentSalonId();
+    	String salonName = salonService.getCurrentSalon().getName();
 
         return bookingRepository
-                .findBySalonId(salonId)
+                .findBySalonName(salonName)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -114,10 +115,10 @@ public class BookingService {
 
     public Page<BookingResponse> getSalonBookings(Pageable pageable) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        String salonName = salonService.getCurrentSalon().getName();
 
         return bookingRepository
-                .findBySalonId(salonId, pageable)
+                .findBySalonName(salonName, pageable)
                 .map(this::mapToResponse);
     }
 
@@ -125,10 +126,10 @@ public class BookingService {
     public BookingResponse cancelBookingByCustomer(Long bookingId) {
 
         Long customerId = SecurityUtil.getCurrentUserId();
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        String salonName = salonService.getCurrentSalon().getName();
 
         Booking booking = bookingRepository
-                .findByIdAndSalonId(bookingId, salonId)
+                .findByIdAndSalonName(bookingId, salonName)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
         if (!booking.getCustomer().getId().equals(customerId)) {
@@ -153,10 +154,10 @@ public class BookingService {
     // ================= ADMIN — CANCEL =================
     public BookingResponse cancelBookingByAdmin(Long bookingId) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        String salonName = salonService.getCurrentSalon().getName();
 
         Booking booking = bookingRepository
-                .findByIdAndSalonId(bookingId, salonId)
+                .findByIdAndSalonName(bookingId, salonName)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
         if (booking.getStatus() != BookingStatus.BOOKED) {
@@ -177,10 +178,10 @@ public class BookingService {
     // ================= ADMIN — COMPLETE =================
     public BookingResponse completeBooking(Long bookingId) {
 
-        Long salonId = SecurityUtil.getCurrentSalonId();
+        String salonName = salonService.getCurrentSalon().getName();
 
         Booking booking = bookingRepository
-                .findByIdAndSalonId(bookingId, salonId)
+                .findByIdAndSalonName(bookingId, salonName)
                 .orElseThrow(() -> new RuntimeException("Booking not found"));
 
         if (booking.getStatus() != BookingStatus.BOOKED) {
@@ -203,6 +204,7 @@ public class BookingService {
         return new BookingResponse(
                 booking.getId(),
                 booking.getService().getName(),
+                booking.getCustomer().getFullName(),
                 booking.getAppointmentTime(),
                 booking.getStatus()
         );

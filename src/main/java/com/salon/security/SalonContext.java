@@ -1,18 +1,22 @@
 package com.salon.security;
 
+/**
+ * ThreadLocal context for single-tenant mode.
+ * Stores salon name (not ID) as the tenant identifier.
+ */
 public class SalonContext {
 
-    private static final ThreadLocal<Long> SALON_ID = new ThreadLocal<>();
+    private static final ThreadLocal<String> SALON_NAME = new ThreadLocal<>();
 
-    public static void setSalonId(Long salonId) {
-        SALON_ID.set(salonId);
+    public static void setSalonName(String salonName) {
+        SALON_NAME.set(salonName);
     }
 
-    public static Long getSalonId() {
-        return SALON_ID.get();
+    public static String getSalonName() {
+        return SALON_NAME.get();
     }
 
     public static void clear() {
-        SALON_ID.remove();
+        SALON_NAME.remove();
     }
 }

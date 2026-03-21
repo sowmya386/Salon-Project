@@ -69,7 +69,7 @@ public class CustomerController {
                         customer.getFullName(),
                         customer.getEmail(),
                         customer.getPhone(),
-                        customer.getSalon().getName()
+                        customer.getSalonName()
                 );
 
         return ResponseEntity.ok(response);
@@ -77,7 +77,6 @@ public class CustomerController {
 
     
     @GetMapping("/services")
-    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<Page<ServiceResponse>> getServices(
             Pageable pageable) {
 
@@ -116,7 +115,6 @@ public class CustomerController {
     }
     
     @GetMapping("/products")
-    @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<Page<ProductResponse>> getProducts(Pageable pageable) {
 
         return ResponseEntity.ok(productService.getActiveProducts(pageable));

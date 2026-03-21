@@ -13,8 +13,8 @@ public class Invoice {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    private Salon salon;
+    @Column(name = "salon_name", nullable = false)
+    private String salonName;
 
     @ManyToOne
     private User customer;
@@ -44,8 +44,8 @@ public class Invoice {
 
     // getters & setters
     public Long getId() { return id; }
-    public Salon getSalon() { return salon; }
-    public void setSalon(Salon salon) { this.salon = salon; }
+    public String getSalonName() { return salonName; }
+    public void setSalonName(String salonName) { this.salonName = salonName; }
 
     public User getCustomer() { return customer; }
     public void setCustomer(User customer) { this.customer = customer; }
