@@ -10,17 +10,23 @@ public class BookingResponse {
     private String customerName;
     private LocalDateTime appointmentTime;
     private BookingStatus status;
+    private String address;
+    private String cancellationMessage;
 
     public BookingResponse(Long bookingId,
                            String serviceName,
                            String customerName,
                            LocalDateTime appointmentTime,
-                           BookingStatus status) {
+                           BookingStatus status,
+                           String address,
+                           String cancellationMessage) {
         this.bookingId = bookingId;
         this.serviceName = serviceName;
         this.customerName = customerName;
         this.appointmentTime = appointmentTime;
         this.status = status;
+        this.address = address;
+        this.cancellationMessage = cancellationMessage;
     }
 
     public Long getBookingId() {
@@ -41,5 +47,13 @@ public class BookingResponse {
 
     public BookingStatus getStatus() {
         return status;
+    }
+
+    public String getAddress() {
+        return address;
+    }
+
+    public String getCancellationMessage() {
+        return cancellationMessage;
     }
 }

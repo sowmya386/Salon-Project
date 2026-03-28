@@ -55,77 +55,41 @@ public class AuthController {
         return ResponseEntity.ok("Customer registered successfully");
     }
 
-    // ================= ADMIN LOGIN =================
-    @PostMapping("/admin/login")
-    public ResponseEntity<LoginResponse> adminLogin(
-    		@Valid @RequestBody LoginRequest request) {
-
-        User admin = userService.loginAdmin(
-                request.getEmail(),
-                request.getPassword(),
-                request.getSalonName()
-        );
-
-        List<String> roles = admin.getUserRoles()
-                .stream()
-                .map(ur -> ur.getRole().getName())
-                .toList();
-
-        String token = jwtUtil.generateToken(
-                admin.getId(),
-                admin.getEmail(),
-                admin.getSalonName(),
-                roles
-        );
-
-        return ResponseEntity.ok(new LoginResponse(token));
-    }
-
-    // ================= CUSTOMER LOGIN =================
-    @PostMapping("/customers/login")
-    public ResponseEntity<LoginResponse> customerLogin(
-    		@Valid  @RequestBody LoginRequest request) {
-
-    	User customer = userService.loginCustomer(
-    		    request.getEmail(),
-    		    request.getPassword(),
-    		    request.getSalonName()
-    		);
-
-
-        List<String> roles = customer.getUserRoles()
-                .stream()
-                .map(ur -> ur.getRole().getName())
-                .toList();
-
-        String token = jwtUtil.generateToken(
-                customer.getId(),
-                customer.getEmail(),
-                customer.getSalonName(),
-                roles
-        );
-
-        return ResponseEntity.ok(new LoginResponse(token));
-    }
-    
+    // ================= SPECIFIC POSTMAN LOGIN ENDPOINTS =================
     @PostMapping("/super-admin/login")
-    public ResponseEntity<LoginResponse> superAdminLogin(
-            @Valid @RequestBody SuperAdminLoginRequest request) {
+    public ResponseEntity<LoginResponse> superAdminLogin(@Valid @RequestBody LoginRequest request) {
+        return login(request);
+    }
 
-        User superAdmin = userService.loginSuperAdmin(
+    @PostMapping("/admin/login")
+    public ResponseEntity<LoginResponse> adminLogin(@Valid @RequestBody LoginRequest request) {
+        return login(request);
+    }
+
+    @PostMapping("/customers/login")
+    public ResponseEntity<LoginResponse> customerLogin(@Valid @RequestBody LoginRequest request) {
+        return login(request);
+    }
+
+    // ================= UNIFIED LOGIN =================
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(
+            @Valid @RequestBody LoginRequest request) {
+
+        User user = userService.loginUnified(
                 request.getEmail(),
                 request.getPassword()
         );
 
-        List<String> roles = superAdmin.getUserRoles()
+        List<String> roles = user.getUserRoles()
                 .stream()
                 .map(ur -> ur.getRole().getName())
                 .toList();
 
         String token = jwtUtil.generateToken(
-                superAdmin.getId(),
-                superAdmin.getEmail(),
-                null,
+                user.getId(),
+                user.getEmail(),
+                user.getSalonName(),
                 roles
         );
 

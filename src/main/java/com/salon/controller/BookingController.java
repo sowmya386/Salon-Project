@@ -44,7 +44,7 @@ public class BookingController {
         String role = authentication.getAuthorities().iterator().next().getAuthority();
 
         if (role.equals("ROLE_ADMIN")) {
-            return ResponseEntity.ok(bookingService.cancelBookingByAdmin(bookingId));
+            return ResponseEntity.ok(bookingService.cancelBookingByAdmin(bookingId, null));
         } else {
             return ResponseEntity.ok(bookingService.cancelBookingByCustomer(bookingId));
         }

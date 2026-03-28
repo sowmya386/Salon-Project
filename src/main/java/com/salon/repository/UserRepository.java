@@ -18,8 +18,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // 🔐 REGISTRATION VALIDATION
     boolean existsByEmailAndSalonName(String email, String salonName);
 
-    // 🔧 UTIL
-    Optional<User> findByEmail(String email);
+    Optional<User> findFirstByEmail(String email);
 
     Optional<User> findByProviderId(String providerId);
 
@@ -36,4 +35,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
           )
     """)
     void approveAdminsBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName);
+
+    @Query("SELECT u FROM User u JOIN u.userRoles ur WHERE u.salonName = :salonName AND ur.role.name = 'ROLE_CUSTOMER'")
+    org.springframework.data.domain.Page<User> findCustomersBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT COUNT(u) FROM User u JOIN u.userRoles ur WHERE u.salonName = :salonName AND ur.role.name = 'ROLE_CUSTOMER'")
+    long countCustomersBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName);
 }

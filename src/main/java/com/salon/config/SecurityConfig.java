@@ -42,8 +42,10 @@ public class SecurityConfig {
             			).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/admin/register").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/admin/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/super-admin/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/customers/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/customers/register").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/reset-password").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/salons").permitAll()
@@ -52,7 +54,6 @@ public class SecurityConfig {
                 // Public catalog for customer browsing
                 .requestMatchers(HttpMethod.GET, "/api/customers/services").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/customers/products").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/auth/super-admin/login").permitAll()
                 .requestMatchers("/api/super-admin/**").hasRole("SUPER_ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/auth/supabase/exchange").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/payments/plans").permitAll()
@@ -69,7 +70,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:5173")); // your React URL
+        config.setAllowedOriginPatterns(List.of("*")); // Allows any origin in production deployment
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

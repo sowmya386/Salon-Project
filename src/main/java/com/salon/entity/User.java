@@ -60,6 +60,12 @@ public class User {
 	    @Column
 	    private Integer loyaltyPoints = 0;
 
+        @Column(columnDefinition = "TEXT")
+        private String homeAddress;
+
+        @Column(columnDefinition = "TEXT")
+        private String profileImageUrl;
+
     public ApprovalStatus getApprovalStatus() {
         return approvalStatus;
     }
@@ -163,4 +169,10 @@ public class User {
 
 	public Integer getLoyaltyPoints() { return loyaltyPoints; }
 	public void setLoyaltyPoints(Integer loyaltyPoints) { this.loyaltyPoints = loyaltyPoints; }
+
+    public String getHomeAddress() { return homeAddress; }
+    public void setHomeAddress(String homeAddress) { this.homeAddress = homeAddress; }
+
+    public String getProfileImageUrl() { return profileImageUrl; }
+    public void setProfileImageUrl(String profileImageUrl) { this.profileImageUrl = profileImageUrl; }
 }

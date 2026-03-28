@@ -78,6 +78,12 @@ public class AdminController {
         return ResponseEntity.ok("Customer registered");
     }
 
+    @GetMapping("/customers")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Page<com.salon.dto.CustomerProfileResponse>> getCustomers(Pageable pageable) {
+        return ResponseEntity.ok(userService.getSalonCustomers(pageable));
+    }
+
 
     // ADMIN creates service
     @PostMapping("/services")
@@ -85,6 +91,21 @@ public class AdminController {
     		@Valid @RequestBody ServiceRequest request) {
 
         return ResponseEntity.ok(serviceService.createService(request));
+    }
+
+    @PutMapping("/services/{serviceId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ServiceResponse> updateService(
+            @PathVariable Long serviceId,
+            @Valid @RequestBody ServiceRequest request) {
+        return ResponseEntity.ok(serviceService.updateService(serviceId, request));
+    }
+    
+    @DeleteMapping("/services/{serviceId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ServiceResponse> deleteService(
+            @PathVariable Long serviceId) {
+        return ResponseEntity.ok(serviceService.deactivateService(serviceId));
     }
 
     
@@ -108,10 +129,13 @@ public class AdminController {
     @PutMapping("/bookings/{bookingId}/cancel")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BookingResponse> cancelBooking(
-            @PathVariable Long bookingId) {
+            @PathVariable Long bookingId,
+            @RequestBody(required = false) java.util.Map<String, String> payload) {
+        
+        String msg = payload != null ? payload.get("message") : null;
 
         return ResponseEntity.ok(
-                bookingService.cancelBookingByAdmin(bookingId)
+                bookingService.cancelBookingByAdmin(bookingId, msg)
         );
     }
     @PutMapping("/bookings/{bookingId}/complete")
@@ -139,6 +163,22 @@ public class AdminController {
 
         return ResponseEntity.ok(productService.createProduct(request));
     }
+
+    @PutMapping("/products/{productId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ProductResponse> updateProduct(
+            @PathVariable Long productId,
+            @Valid @RequestBody ProductRequest request) {
+        return ResponseEntity.ok(productService.updateProduct(productId, request));
+    }
+
+    @DeleteMapping("/products/{productId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ProductResponse> deleteProduct(
+            @PathVariable Long productId) {
+        return ResponseEntity.ok(productService.deactivateProduct(productId));
+    }
+
     @PostMapping("/invoices")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<InvoiceResponse> createInvoice(

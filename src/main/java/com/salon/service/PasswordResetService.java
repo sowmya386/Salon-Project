@@ -29,7 +29,7 @@ public class PasswordResetService {
  // 1️⃣ Forgot password (SaaS-safe)
     public void createResetToken(String email) {
 
-        userRepo.findByEmail(email).ifPresent(user -> {
+        userRepo.findFirstByEmail(email).ifPresent(user -> {
 
             String token = UUID.randomUUID().toString();
             LocalDateTime expiry = LocalDateTime.now().plusMinutes(15);

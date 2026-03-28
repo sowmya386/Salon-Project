@@ -69,7 +69,31 @@ public class CustomerController {
                         customer.getFullName(),
                         customer.getEmail(),
                         customer.getPhone(),
-                        customer.getSalonName()
+                        customer.getSalonName(),
+                        customer.getHomeAddress(),
+                        customer.getProfileImageUrl()
+                );
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/profile")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<CustomerProfileResponse> updateCustomerProfile(
+            @Valid @RequestBody com.salon.dto.CustomerProfileUpdateRequest request) {
+
+        Long userId = SecurityUtil.getCurrentUserId();
+        User customer = userService.updateCustomerProfile(userId, request);
+
+        CustomerProfileResponse response =
+                new CustomerProfileResponse(
+                        customer.getId(),
+                        customer.getFullName(),
+                        customer.getEmail(),
+                        customer.getPhone(),
+                        customer.getSalonName(),
+                        customer.getHomeAddress(),
+                        customer.getProfileImageUrl()
                 );
 
         return ResponseEntity.ok(response);

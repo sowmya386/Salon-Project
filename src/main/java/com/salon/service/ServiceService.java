@@ -61,6 +61,20 @@ public class ServiceService {
         );
     }
 
+    public ServiceResponse updateService(Long serviceId, ServiceRequest request) {
+        Salon salon = salonService.getCurrentSalon();
+        Service service = serviceRepository.findByIdAndSalonName(serviceId, salon.getName())
+                .orElseThrow(() -> new RuntimeException("Service not found"));
+        
+        service.setName(request.getName());
+        service.setPrice(request.getPrice());
+        service.setDurationInMinutes(request.getDurationInMinutes());
+        service = serviceRepository.save(service);
+        auditLogService.log(AuditAction.UPDATE_SERVICE, "Admin updated service ID " + service.getId());
+        
+        return new ServiceResponse(service.getId(), service.getName(), service.getPrice(), service.getDurationInMinutes());
+    }
+
     // CUSTOMER + ADMIN
     public List<ServiceResponse> getActiveServices() {
         String salonName = salonService.getCurrentSalon().getName();

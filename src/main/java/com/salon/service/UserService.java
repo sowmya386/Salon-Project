@@ -63,6 +63,7 @@ public class UserService {
         customer.setPhone(request.getPhone());
         customer.setSalonName(salon.getName());
         customer.setActive(true);
+        customer.setApprovalStatus(ApprovalStatus.APPROVED);
 
         customer = userRepository.save(customer);
 
@@ -91,6 +92,7 @@ public class UserService {
         customer.setPhone(request.getPhone());
         customer.setSalonName(salon.getName());
         customer.setActive(true);
+        customer.setApprovalStatus(ApprovalStatus.APPROVED);
 
         customer = userRepository.save(customer);
 
@@ -144,90 +146,38 @@ public class UserService {
     }
 
     // ================= LOGIN =================
-    public User loginCustomer(String email, String password, String salonName) {
-        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
-
-    	 Salon salon = salonRepository.findByNameIgnoreCase(name)
-    	            .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
-
-    	    User user = userRepository.findByEmailAndSalonName(email, salon.getName())
-    	            .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
-
-
-        boolean isCustomer = user.getUserRoles().stream()
-                .anyMatch(ur -> ur.getRole().getName().equals("ROLE_CUSTOMER"));
-
-        if (!isCustomer) {
-            throw new BadRequestException("Not a customer account");
-        }
-
-        if (user.getPassword() == null) {
-            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
-        }
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new UnauthorizedException("Invalid credentials");
-        }
-
-        return user;
-    }
-
-
-    public User loginAdmin(String email, String password, String salonName) {
-        String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
-
-    	 Salon salon = salonRepository.findByNameIgnoreCase(name)
-    	            .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
-
-    	    User user = userRepository.findByEmailAndSalonName(email, salon.getName())
-    	            .orElseThrow(() -> new ResourceNotFoundException("User", "email", email));
-
-
-//        boolean isAdmin = user.getUserRoles().stream()
-//                .anyMatch(ur -> ur.getRole().getName().equals("ROLE_ADMIN"));
-//
-//        if (!isAdmin) {
-//            throw new RuntimeException("Not an admin account");
-//        }
-
-        if (user.getPassword() == null) {
-            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
-        }
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new UnauthorizedException("Invalid credentials");
-        }
-        if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new BadRequestException("Admin account not approved yet");
-        }
-
-        if (salon.getApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new BadRequestException("Salon not approved yet");
-        }
-
-
-        return user;
-    }
-    
-    public User loginSuperAdmin(String email, String password) {
-
-        User user = userRepository.findByEmail(email)
+    // ================= UNIFIED LOGIN =================
+    public User loginUnified(String email, String password) {
+        User user = userRepository.findFirstByEmail(email)
                 .orElseThrow(() -> new UnauthorizedException("Invalid credentials"));
+
+        if (user.getPassword() == null) {
+            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
+        }
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new UnauthorizedException("Invalid credentials");
+        }
 
         boolean isSuperAdmin = user.getUserRoles().stream()
                 .anyMatch(ur -> ur.getRole().getName().equals("ROLE_SUPER_ADMIN"));
+        boolean isAdmin = user.getUserRoles().stream()
+                .anyMatch(ur -> ur.getRole().getName().equals("ROLE_ADMIN"));
 
-        if (!isSuperAdmin) {
-            throw new RuntimeException("Not a super admin");
-        }
-
-        if (user.getPassword() == null) {
-            throw new BadRequestException("This account uses Google sign-in. Please sign in with Google.");
-        }
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new UnauthorizedException("Invalid credentials");
-        }
-
-        if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
-            throw new BadRequestException("Super admin not approved");
+        if (isSuperAdmin) {
+            if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
+                throw new BadRequestException("Super admin not approved");
+            }
+        } else if (isAdmin) {
+            if (user.getApprovalStatus() != ApprovalStatus.APPROVED) {
+                throw new BadRequestException("Admin account not approved yet");
+            }
+            if (user.getSalonName() != null) {
+                Salon salon = salonRepository.findByNameIgnoreCase(user.getSalonName())
+                        .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", user.getSalonName()));
+                if (salon.getApprovalStatus() != ApprovalStatus.APPROVED) {
+                    throw new BadRequestException("Salon not approved yet");
+                }
+            }
         }
 
         return user;
@@ -282,5 +232,23 @@ public class UserService {
         userRoleRepository.save(new UserRole(user, role));
 
         return user;
+    }
+
+    public org.springframework.data.domain.Page<com.salon.dto.CustomerProfileResponse> getSalonCustomers(org.springframework.data.domain.Pageable pageable) {
+        String salonName = com.salon.security.SecurityUtil.getCurrentSalonName();
+        return userRepository.findCustomersBySalonName(salonName, pageable)
+                .map(c -> new com.salon.dto.CustomerProfileResponse(
+                        c.getId(), c.getFullName(), c.getEmail(), c.getPhone(), c.getSalonName(), c.getHomeAddress(), c.getProfileImageUrl()
+                ));
+    }
+
+    // ================= CUSTOMER UPDATES PROFILE =================
+    public User updateCustomerProfile(Long userId, com.salon.dto.CustomerProfileUpdateRequest request) {
+        User customer = getUserById(userId);
+        customer.setFullName(request.getFullName());
+        customer.setPhone(request.getPhone());
+        customer.setHomeAddress(request.getHomeAddress());
+        customer.setProfileImageUrl(request.getProfileImageUrl());
+        return userRepository.save(customer);
     }
 }

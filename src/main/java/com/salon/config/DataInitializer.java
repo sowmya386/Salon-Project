@@ -99,20 +99,29 @@ public class DataInitializer {
                 roleRepository.save(new Role("ROLE_SALON_OWNER"));
             }
 
-            // ✅ Then create super admin user if not exists
-            if (userRepository.findByEmail("systemadmin@gmail.com").isPresent()) {
-                return;
-            }
+            // ✅ Ensure super admin exists and forcefully reset password to admin123
+            User superAdmin = userRepository.findFirstByEmail("systemadmin@gmail.com")
+                    .orElseGet(User::new);
 
-            User superAdmin = new User();
             superAdmin.setFullName("System Admin");
             superAdmin.setEmail("systemadmin@gmail.com");
-            superAdmin.setPassword(passwordEncoder.encode("admin123"));
+            superAdmin.setPassword(passwordEncoder.encode("admin123")); // Forces correct hash
             superAdmin.setActive(true);
             superAdmin.setApprovalStatus(ApprovalStatus.APPROVED);
-            superAdmin.setCreatedAt(LocalDateTime.now());
+            
+            if (superAdmin.getCreatedAt() == null) {
+                superAdmin.setCreatedAt(LocalDateTime.now());
+            }
+            
             userRepository.save(superAdmin);
-            userRoleRepository.save(new UserRole(superAdmin, superAdminRole));
+
+            // Ensure super admin has the role mapped
+            boolean hasRole = userRoleRepository.findByUser(superAdmin).stream()
+                    .anyMatch(ur -> ur.getRole().getName().equals("ROLE_SUPER_ADMIN"));
+
+            if (!hasRole) {
+                userRoleRepository.save(new UserRole(superAdmin, superAdminRole));
+            }
         };
     }
 }

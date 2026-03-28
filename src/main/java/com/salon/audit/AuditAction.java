@@ -2,6 +2,8 @@ package com.salon.audit;
 
 public enum AuditAction {
     CREATE_SERVICE,
+    UPDATE_SERVICE,
+    UPDATE_PRODUCT,
     CREATE_BOOKING,
     CANCEL_BOOKING,
     COMPLETE_BOOKING,

@@ -49,6 +49,19 @@ public class ProductService {
         );
     }
 
+    public ProductResponse updateProduct(Long productId, ProductRequest request) {
+        Salon salon = salonService.getCurrentSalon();
+        Product product = productRepository.findByIdAndSalonName(productId, salon.getName())
+                .orElseThrow(() -> new RuntimeException("Product not found"));
+        
+        product.setName(request.getName());
+        product.setDescription(request.getDescription());
+        product.setPrice(request.getPrice());
+        product.setStock(request.getStock());
+        product = productRepository.save(product);
+        return new ProductResponse(product.getId(), product.getName(), product.getDescription(), product.getPrice(), product.getStock());
+    }
+
     // CUSTOMER + ADMIN
     public Page<ProductResponse> getActiveProducts(Pageable pageable) {
 

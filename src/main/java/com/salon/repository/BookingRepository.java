@@ -83,6 +83,11 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
     	    );
 
     	    long countBySalonNameAndStatus(String salonName, BookingStatus status);
-
-    
+            
+            List<Booking> findBySalonNameAndAppointmentTimeBetweenAndStatus(
+                    String salonName,
+                    LocalDateTime start,
+                    LocalDateTime end,
+                    BookingStatus status
+            );
 }

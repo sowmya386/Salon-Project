@@ -30,6 +30,12 @@ public class Booking {
     @Column(name = "salon_name", nullable = false)
     private String salonName;
 
+    // Optional address for Home Services
+    private String address;
+
+    @Column(columnDefinition = "TEXT")
+    private String cancellationMessage;
+
     // when
     private LocalDateTime appointmentTime;
 
@@ -94,6 +100,9 @@ public class Booking {
         this.createdAt = createdAt;
     }
 
-	
+    public String getAddress() { return address; }
+    public void setAddress(String address) { this.address = address; }
 
+    public String getCancellationMessage() { return cancellationMessage; }
+    public void setCancellationMessage(String cancellationMessage) { this.cancellationMessage = cancellationMessage; }
 }

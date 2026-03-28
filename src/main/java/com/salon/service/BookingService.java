@@ -31,6 +31,7 @@ public class BookingService {
     private final AuditLogService auditLogService;
     private final SalonRepository salonRepository;
     private final SalonService salonService;
+    private final EmailService emailService;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -38,7 +39,8 @@ public class BookingService {
             UserRepository userRepository,
             AuditLogService auditLogService,
             SalonRepository salonRepository,
-            SalonService salonService
+            SalonService salonService,
+            EmailService emailService
     ) {
         this.bookingRepository = bookingRepository;
         this.serviceRepository = serviceRepository;
@@ -46,6 +48,7 @@ public class BookingService {
         this.auditLogService = auditLogService;
         this.salonRepository = salonRepository;
         this.salonService = salonService;
+        this.emailService = emailService;
     }
 
     // ================= CREATE BOOKING =================
@@ -66,6 +69,7 @@ public class BookingService {
         booking.setService(service);
         booking.setSalonName(salon.getName());
         booking.setAppointmentTime(request.getAppointmentTime());
+        booking.setAddress(request.getAddress());
         booking.setStatus(BookingStatus.BOOKED);
 
         booking = bookingRepository.save(booking);
@@ -74,6 +78,8 @@ public class BookingService {
                 AuditAction.CREATE_BOOKING,
                 "Customer created booking ID " + booking.getId()
         );
+        
+        emailService.sendBookingConfirmation(booking);
 
         return mapToResponse(booking);
     }
@@ -141,18 +147,21 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
+        booking.setCancellationMessage("Cancelled by Customer");
         bookingRepository.save(booking);
 
         auditLogService.log(
                 AuditAction.CANCEL_BOOKING,
                 "Customer cancelled booking ID " + bookingId
         );
+        
+        emailService.sendCancellationNotice(booking);
 
         return mapToResponse(booking);
     }
 
     // ================= ADMIN — CANCEL =================
-    public BookingResponse cancelBookingByAdmin(Long bookingId) {
+    public BookingResponse cancelBookingByAdmin(Long bookingId, String cancellationMessage) {
 
         String salonName = salonService.getCurrentSalon().getName();
 
@@ -165,12 +174,19 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
+        if (cancellationMessage != null && !cancellationMessage.isBlank()) {
+            booking.setCancellationMessage(cancellationMessage);
+        } else {
+            booking.setCancellationMessage("Cancelled by Admin");
+        }
         bookingRepository.save(booking);
 
         auditLogService.log(
                 AuditAction.CANCEL_BOOKING,
                 "Admin cancelled booking ID " + bookingId
         );
+        
+        emailService.sendCancellationNotice(booking);
 
         return mapToResponse(booking);
     }
@@ -206,7 +222,9 @@ public class BookingService {
                 booking.getService().getName(),
                 booking.getCustomer().getFullName(),
                 booking.getAppointmentTime(),
-                booking.getStatus()
+                booking.getStatus(),
+                booking.getAddress(),
+                booking.getCancellationMessage()
         );
     }
 }
