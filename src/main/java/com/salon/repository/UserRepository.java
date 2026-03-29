@@ -17,6 +17,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     // 🔐 REGISTRATION VALIDATION
     boolean existsByEmailAndSalonName(String email, String salonName);
+    
+    boolean existsByEmail(String email);
 
     Optional<User> findFirstByEmail(String email);
 

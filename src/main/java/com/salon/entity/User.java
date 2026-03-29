@@ -26,14 +26,14 @@ public class User {
 	    @Column(nullable = false)
 	    private String email;
 
-    @Column(unique = true)
+    @Column
     private String phone;
 
     @Column
     private String password;  // nullable for OAuth-only users (e.g. Google sign-in)
 
     /** Supabase/auth provider user ID (e.g. UUID from Supabase) */
-    @Column(unique = true)
+    @Column
     private String providerId;
 
     /** Auth provider: "email", "google", etc. */

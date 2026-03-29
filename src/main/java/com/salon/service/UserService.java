@@ -49,10 +49,9 @@ public class UserService {
                 .findByNameIgnoreCase(salonName)
                 .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", salonName));
 
-        if (userRepository.existsByEmailAndSalonName(
-                request.getEmail(), salon.getName())) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new EmailAlreadyExistsException(
-                    "Email already exists in this salon"
+                    "Email already exists. Please log in or use a different email."
             );
         }
 
@@ -78,10 +77,9 @@ public class UserService {
     // ================= ADMIN REGISTERS CUSTOMER =================
     public User registerCustomerByAdmin(CustomerRegisterRequest request, Salon salon) {
 
-        if (userRepository.existsByEmailAndSalonName(
-                request.getEmail(), salon.getName())) {
+        if (userRepository.existsByEmail(request.getEmail())) {
             throw new EmailAlreadyExistsException(
-                    "Email already exists in this salon"
+                    "Email already exists. Please log in or use a different email."
             );
         }
 
@@ -119,10 +117,9 @@ public class UserService {
                     return salonRepository.save(newSalon);
                 });
 
-        // 2️⃣ Check email uniqueness inside salon
-        if (userRepository.existsByEmailAndSalonName(
-                request.getEmail(), salon.getName())) {
-            throw new RuntimeException("Email already exists for this salon");
+        // 2️⃣ Check email uniqueness system-wide
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new RuntimeException("Email already exists. Please log in or use a different email.");
         }
 
         // 3️⃣ Create admin (PENDING)
@@ -205,8 +202,8 @@ public class UserService {
                     throw new ResourceNotFoundException("Salon", "name", name);
                 });
 
-        // Find by email and salonName
-        var existingByEmail = userRepository.findByEmailAndSalonName(info.email(), salon.getName());
+        // Find by global email
+        var existingByEmail = userRepository.findFirstByEmail(info.email());
         if (existingByEmail.isPresent()) {
             User user = existingByEmail.get();
             // Link OAuth provider if not already linked
