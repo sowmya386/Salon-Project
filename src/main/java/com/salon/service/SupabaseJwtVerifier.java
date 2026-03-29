@@ -1,73 +1,97 @@
 package com.salon.service;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * Verifies Supabase-issued JWTs (e.g. from Google OAuth sign-in).
- * Uses the JWT secret from Supabase project settings (Settings → API → JWT Secret).
+ * Verifies Supabase-issued JWTs (e.g. from Google OAuth sign-in)
+ * Uses the Supabase /auth/v1/user endpoint to securely bypass ES256 algorithm limitations.
  */
 @Service
 public class SupabaseJwtVerifier {
 
-    private final String jwtSecret;
+    private final String supabaseUrl;
+    private final String anonKey;
+    private final RestTemplate restTemplate;
 
-    public SupabaseJwtVerifier(@Value("${supabase.jwt-secret:}") String jwtSecret) {
-        this.jwtSecret = jwtSecret;
+    public SupabaseJwtVerifier(
+            @Value("${supabase.url:}") String supabaseUrl,
+            @Value("${supabase.anon-key:}") String anonKey) {
+        this.supabaseUrl = supabaseUrl;
+        this.anonKey = anonKey;
+        this.restTemplate = new RestTemplate();
     }
 
     /**
-     * Verifies and parses a Supabase access token.
-     *
-     * @param accessToken the JWT from Supabase Auth (e.g. session.access_token)
-     * @return claims with sub (user id), email, user_metadata, etc.
-     * @throws IllegalArgumentException if token is invalid or verification fails
+     * Verifies and extracts user info using Supabase API.
      */
     public SupabaseUserInfo verifyAndExtract(String accessToken) {
-        if (jwtSecret == null || jwtSecret.isBlank()) {
-            throw new IllegalStateException("Supabase JWT secret is not configured. Set supabase.jwt-secret in application.properties");
+        if (supabaseUrl == null || supabaseUrl.isBlank() || anonKey == null || anonKey.isBlank()) {
+            throw new IllegalStateException("Supabase URL or Anon Key not configured. Set supabase.url and supabase.anon-key in application.properties");
         }
 
-        byte[] keyBytes;
         try {
-            keyBytes = Decoders.BASE64.decode(jwtSecret);
-        } catch (Exception e) {
-            keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
-        }
-        SecretKey key = Keys.hmacShaKeyFor(keyBytes);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(accessToken);
+            headers.set("apikey", anonKey);
 
-        Claims claims = Jwts.parserBuilder()
-                .setSigningKey(key)
-                .build()
-                .parseClaimsJws(accessToken)
-                .getBody();
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+            ResponseEntity<SupabaseUserResponse> response = restTemplate.exchange(
+                    supabaseUrl + "/auth/v1/user",
+                    HttpMethod.GET,
+                    request,
+                    SupabaseUserResponse.class
+            );
 
-        String sub = claims.getSubject();
-        String email = claims.get("email", String.class);
-        if (email == null || email.isBlank()) {
-            email = claims.get("phone", String.class);
-        }
+            SupabaseUserResponse user = response.getBody();
+            if (user == null || user.getId() == null) {
+                throw new IllegalArgumentException("Invalid Supabase token");
+            }
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> userMetadata = claims.get("user_metadata", Map.class);
-        String fullName = null;
-        if (userMetadata != null && userMetadata.containsKey("full_name")) {
-            fullName = String.valueOf(userMetadata.get("full_name"));
-        }
-        if (fullName == null || fullName.isBlank()) {
-            fullName = email != null ? email.split("@")[0] : "User";
-        }
+            String email = user.getEmail();
+            if (email == null || email.isBlank()) {
+                email = user.getPhone();
+            }
 
-        return new SupabaseUserInfo(sub, email, fullName);
+            String fullName = null;
+            if (user.getUserMetadata() != null && user.getUserMetadata().containsKey("full_name")) {
+                fullName = String.valueOf(user.getUserMetadata().get("full_name"));
+            }
+            if (fullName == null || fullName.isBlank()) {
+                fullName = email != null ? email.split("@")[0] : "User";
+            }
+
+            return new SupabaseUserInfo(user.getId(), email, fullName);
+
+        } catch (HttpClientErrorException e) {
+            throw new IllegalArgumentException("Invalid or expired Supabase token", e);
+        }
     }
 
     public record SupabaseUserInfo(String providerId, String email, String fullName) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SupabaseUserResponse {
+        private String id;
+        private String email;
+        private String phone;
+        @JsonProperty("user_metadata")
+        private Map<String, Object> userMetadata;
+
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getPhone() { return phone; }
+        public void setPhone(String phone) { this.phone = phone; }
+        public Map<String, Object> getUserMetadata() { return userMetadata; }
+        public void setUserMetadata(Map<String, Object> userMetadata) { this.userMetadata = userMetadata; }
+    }
 }

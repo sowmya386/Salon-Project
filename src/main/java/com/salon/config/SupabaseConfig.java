@@ -16,12 +16,19 @@ public class SupabaseConfig {
     @Value("${supabase.jwt-secret:}")
     private String jwtSecret;
 
+    @Value("${supabase.anon-key:}")
+    private String anonKey;
+
     public String getUrl() {
         return url;
     }
 
     public String getJwtSecret() {
         return jwtSecret;
+    }
+
+    public String getAnonKey() {
+        return anonKey;
     }
 
     public boolean isConfigured() {
