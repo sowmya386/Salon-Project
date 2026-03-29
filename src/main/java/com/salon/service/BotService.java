@@ -8,7 +8,8 @@ import com.salon.entity.Booking;
 import com.salon.entity.User;
 import com.salon.repository.BookingRepository;
 import com.salon.repository.UserRepository;
-
+import com.salon.entity.Role;
+import com.salon.dto.DashboardSummaryResponse;
 
 import org.springframework.stereotype.Service;
 
@@ -22,26 +23,36 @@ public class BotService {
     private final SalonService salonService;
     private final BookingRepository bookingRepository;
     private final UserRepository userRepository;
+    private final DashboardService dashboardService;
 
     public BotService(ServiceRepository serviceRepository,
                       ProductRepository productRepository,
                       SalonService salonService,
                       BookingRepository bookingRepository,
-                      UserRepository userRepository) {
+                      UserRepository userRepository,
+                      DashboardService dashboardService) {
         this.serviceRepository = serviceRepository;
         this.productRepository = productRepository;
         this.salonService = salonService;
         this.bookingRepository = bookingRepository;
         this.userRepository = userRepository;
+        this.dashboardService = dashboardService;
     }
 
     public BotResponse reply(String message) {
         // Bot can be called without auth (permitAll); use default salon for single-tenant
         String salonName;
         Long userId;
+        boolean isAdmin = false;
+
         try {
             salonName = salonService.getCurrentSalon().getName();
             userId = SecurityUtil.getCurrentUserId();
+            User u = userRepository.findById(userId).orElse(null);
+            if (u != null) {
+                isAdmin = u.getUserRoles().stream()
+                    .anyMatch(r -> r.getRole().getName().contains("ADMIN"));
+            }
         } catch (Exception e) {
             // No auth - use default salon; booking lookup won't work without userId
             salonName = salonService.getDefaultSalon().getName();
@@ -84,6 +95,23 @@ public class BotService {
         java.util.List<com.salon.entity.Service> allServices = serviceRepository.findBySalonNameAndActiveTrue(salonName);
         java.util.List<com.salon.entity.Product> allProducts = productRepository.findBySalonNameAndActiveTrue(salonName);
 
+        // 👇 ADMIN ONLY COMMANDS
+        if (isAdmin && (lower.contains("revenue") || lower.contains("dashboard") || lower.contains("summary") || lower.contains("report"))) {
+            try {
+                DashboardSummaryResponse summary = dashboardService.getSummary();
+                return new BotResponse(
+                    "Good day, Administrator.\nHere is your requested formal business summary for **" + salonName + "**:\n\n" +
+                    "• **Total Revenue (Last 7 Days):** ₹" + summary.getRevenue() + "\n" +
+                    "• **New Customers:** " + summary.getNewCustomers() + "\n" +
+                    "• **Today's Bookings:** " + summary.getTodayBookings() + "\n" +
+                    "• **Completed Appointments:** " + summary.getCompletedBookings() + "\n\n" +
+                    "Please refer to the Admin Dashboard for comprehensive analytics."
+                );
+            } catch (Exception e) {
+                return new BotResponse("Good day, Administrator. I am currently unable to fetch the business summary. Please check the Dashboard directly.");
+            }
+        }
+
         // 👇 Specific item lookup: check if message contains any specific product/service name
         java.util.List<com.salon.entity.Service> matchedServices = allServices.stream()
                 .filter(s -> lower.contains(s.getName().toLowerCase()))
@@ -94,7 +122,7 @@ public class BotService {
                 .collect(Collectors.toList());
 
         if (!matchedServices.isEmpty() || !matchedProducts.isEmpty()) {
-            StringBuilder sb = new StringBuilder("Here is what I found for your query:\n");
+            StringBuilder sb = new StringBuilder("Good day! I have located the specific items you requested:\n\n");
             for (com.salon.entity.Service s : matchedServices) {
                 sb.append("✨ ").append(s.getName()).append(" - ₹").append(s.getPrice()).append(" (").append(s.getDurationInMinutes() != null ? s.getDurationInMinutes() : 60).append(" mins)\n");
             }
@@ -102,6 +130,7 @@ public class BotService {
                 sb.append("🛍️ ").append(p.getName()).append(" - ₹").append(p.getPrice())
                   .append(p.getStock() > 0 ? " (In Stock)" : " (Out of Stock)").append("\n");
             }
+            sb.append("\nPlease let me know if you would like to proceed with a booking or purchase.");
             return new BotResponse(sb.toString());
         }
 
@@ -113,8 +142,8 @@ public class BotService {
 
             return new BotResponse(
                     servicesMsg.isEmpty()
-                            ? "Currently, no services are available."
-                            : "Here are our premium services:\n" + servicesMsg
+                            ? "I apologize, but there are no active services available at this time."
+                            : "Certainly. Here is our catalog of premium services:\n\n" + servicesMsg + "\n\nYou may formally request any of these through the 'Book Appointment' portal."
             );
         }
 
@@ -125,37 +154,44 @@ public class BotService {
 
             return new BotResponse(
                     products.isEmpty()
-                            ? "No products available."
-                            : "Available products:\n" + products
+                            ? "I apologize, but our retail store is currently out of stock."
+                            : "Certainly. Our premium retail products include:\n\n" + products + "\n\nThese are available for purchase directly through the Retail Store."
             );
         }
 
         if (lower.contains("book") || lower.contains("appointment")) {
             return new BotResponse(
-                    "You can book an appointment from the app by selecting a service and preferred time."
+                    "To secure your appointment, please navigate to the 'Book Appointment' section. This will allow you to select your preferred service, date, and exclusive appointment time."
             );
         }
 
         if (lower.contains("offer")) {
             return new BotResponse(
-                    "Currently there are no active offers. Please check back later."
+                    "At this moment, all our premium services are offered at their standard catalog price. Please monitor our homepage for future exclusive promotions."
             );
         }
-        if (lower.contains("help") || lower.contains("what can you do")) {
+        
+        if (isAdmin && (lower.contains("help") || lower.contains("what can you do"))) {
             return new BotResponse(
-                "I can help you with:\n" +
-                "- Services & prices\n" +
-                "- Products\n" +
-                "- Booking information\n" +
-                "- Your booking status\n" +
-                "Try typing: services, products, my booking"
+                "Good day, Administrator. I am your Executive AI Assistant. I can assist you with:\n\n" +
+                "- **Business Summary** -> e.g., 'What is the revenue?'\n" +
+                "- **Service/Retail Lookup** -> e.g., 'Show me services'\n\n" +
+                "How may I assist your management duties today?"
+            );
+        } else if (lower.contains("help") || lower.contains("what can you do")) {
+            return new BotResponse(
+                "Greetings! I am the Salon's Virtual Concierge. I can assist you with:\n\n" +
+                "- **Premium Services** -> e.g., 'What services do you offer?'\n" +
+                "- **Retail Products** -> e.g., 'Show me products'\n" +
+                "- **Your Appointments** -> e.g., 'What is my booking status?'\n\n" +
+                "How may I elevate your experience today?"
             );
         }
 
         return new BotResponse(
-                "Sorry, I didn’t understand that.\n" +
-                "Type 'help' to see what I can assist with."
+                "I apologize, but I am unable to comprehend your request.\n\n" +
+                "Please type **'help'** to display the complete list of inquiries I am authorized to assist you with."
             );
         }
-    }
+}
 

@@ -13,6 +13,12 @@ import com.salon.repository.BookingRepository;
 import com.salon.repository.SalonRepository;
 import com.salon.repository.ServiceRepository;
 import com.salon.repository.UserRepository;
+import com.salon.repository.InvoiceRepository;
+import com.salon.repository.InvoiceItemRepository;
+import com.salon.entity.Invoice;
+import com.salon.entity.InvoiceItem;
+import com.salon.entity.PaymentMode;
+import com.salon.entity.ItemType;
 import com.salon.security.SecurityUtil;
 import com.salon.service.SalonService;
 
@@ -32,6 +38,8 @@ public class BookingService {
     private final SalonRepository salonRepository;
     private final SalonService salonService;
     private final EmailService emailService;
+    private final InvoiceRepository invoiceRepository;
+    private final InvoiceItemRepository invoiceItemRepository;
 
     public BookingService(
             BookingRepository bookingRepository,
@@ -40,7 +48,9 @@ public class BookingService {
             AuditLogService auditLogService,
             SalonRepository salonRepository,
             SalonService salonService,
-            EmailService emailService
+            EmailService emailService,
+            InvoiceRepository invoiceRepository,
+            InvoiceItemRepository invoiceItemRepository
     ) {
         this.bookingRepository = bookingRepository;
         this.serviceRepository = serviceRepository;
@@ -49,6 +59,8 @@ public class BookingService {
         this.salonRepository = salonRepository;
         this.salonService = salonService;
         this.emailService = emailService;
+        this.invoiceRepository = invoiceRepository;
+        this.invoiceItemRepository = invoiceItemRepository;
     }
 
     // ================= CREATE BOOKING =================
@@ -80,6 +92,42 @@ public class BookingService {
         );
         
         emailService.sendBookingConfirmation(booking);
+
+        // Auto-generate invoice for prepaid transactions
+        String payMethod = request.getPaymentMethod();
+        if (payMethod != null && !payMethod.equalsIgnoreCase("Pay at Salon")) {
+            Invoice invoice = new Invoice();
+            invoice.setSalonName(salon.getName());
+            try {
+                // Map common strings to enum safely
+                if (payMethod.equalsIgnoreCase("Google Pay")) invoice.setPaymentMode(PaymentMode.UPI);
+                else if (payMethod.equalsIgnoreCase("PhonePe")) invoice.setPaymentMode(PaymentMode.UPI);
+                else if (payMethod.equalsIgnoreCase("Card")) invoice.setPaymentMode(PaymentMode.CARD);
+                else invoice.setPaymentMode(PaymentMode.valueOf(payMethod.toUpperCase()));
+            } catch (Exception e) {
+                invoice.setPaymentMode(PaymentMode.ONLINE); // fallback
+            }
+            invoice.setCustomer(customer);
+            invoice.setBooking(booking);
+            invoice.setTotalAmount(service.getPrice());
+            
+            invoice = invoiceRepository.save(invoice);
+            
+            InvoiceItem item = new InvoiceItem();
+            item.setInvoice(invoice);
+            item.setItemName(service.getName());
+            item.setPrice(service.getPrice());
+            item.setQuantity(1);
+            item.setAmount(service.getPrice());
+            item.setItemType(ItemType.SERVICE);
+            
+            invoiceItemRepository.save(item);
+            
+            auditLogService.log(
+                AuditAction.CREATE_INVOICE,
+                "Auto-generated Prepaid Invoice ID " + invoice.getId() + " for Booking " + booking.getId()
+            );
+        }
 
         return mapToResponse(booking);
     }

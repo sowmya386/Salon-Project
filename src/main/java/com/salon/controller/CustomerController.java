@@ -143,6 +143,15 @@ public class CustomerController {
 
         return ResponseEntity.ok(productService.getActiveProducts(pageable));
     }
+
+    @PostMapping("/checkout/products")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    public ResponseEntity<InvoiceResponse> checkoutProducts(
+            @Valid @RequestBody com.salon.dto.CustomerCheckoutRequest request) {
+
+        return ResponseEntity.ok(billingService.checkoutProducts(request));
+    }
+
     @GetMapping("/invoices")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<Page<InvoiceResponse>> getMyInvoices(Pageable pageable) {

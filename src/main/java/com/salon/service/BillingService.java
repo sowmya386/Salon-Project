@@ -151,6 +151,86 @@ public class BillingService {
                 responseItems
         );
     }
+
+    @Transactional
+    public InvoiceResponse checkoutProducts(CustomerCheckoutRequest request) {
+        Salon salon = salonService.getCurrentSalon();
+        String salonName = salon.getName();
+        Long customerId = SecurityUtil.getCurrentUserId();
+        User customer = userRepository.findById(customerId).get();
+        
+        Invoice invoice = new Invoice();
+        invoice.setSalonName(salonName);
+        invoice.setCustomer(customer);  
+        
+        String payMethod = request.getPaymentMethod();
+        try {
+            if (payMethod.equalsIgnoreCase("Google Pay")) invoice.setPaymentMode(PaymentMode.UPI);
+            else if (payMethod.equalsIgnoreCase("PhonePe")) invoice.setPaymentMode(PaymentMode.UPI);
+            else if (payMethod.equalsIgnoreCase("Card")) invoice.setPaymentMode(PaymentMode.CARD);
+            else if (payMethod.equalsIgnoreCase("Cash on Delivery")) invoice.setPaymentMode(PaymentMode.CASH);
+            else invoice.setPaymentMode(PaymentMode.valueOf(payMethod.toUpperCase()));
+        } catch (Exception e) {
+            invoice.setPaymentMode(PaymentMode.ONLINE); // fallback
+        }
+
+        invoice = invoiceRepository.save(invoice);
+
+        double total = 0;
+        List<InvoiceItemResponse> responseItems = new ArrayList<>();
+
+        for (CustomerCheckoutRequest.CheckoutItem itemReq : request.getItems()) {
+            InvoiceItem item = new InvoiceItem();
+            item.setInvoice(invoice);
+
+            Product product = productRepository
+                    .findByIdAndSalonName(itemReq.getProductId(), salonName)
+                    .orElseThrow(() -> new RuntimeException("Product not found"));
+
+            if (product.getStock() < itemReq.getQuantity()) {
+                throw new RuntimeException("Insufficient stock for product " + product.getName());
+            }
+
+            product.setStock(product.getStock() - itemReq.getQuantity());
+            productRepository.save(product);
+
+            item.setItemName(product.getName());
+            item.setPrice(product.getPrice());
+            item.setQuantity(itemReq.getQuantity());
+            item.setItemType(ItemType.PRODUCT);
+
+            double amount = item.getPrice() * item.getQuantity();
+            item.setAmount(amount);
+
+            invoiceItemRepository.save(item);
+            total += amount;
+
+            responseItems.add(new InvoiceItemResponse(
+                    item.getItemName(),
+                    item.getItemType().name(),
+                    item.getPrice(),
+                    item.getQuantity(),
+                    amount
+            ));
+        }
+
+        invoice.setTotalAmount(total);
+        invoiceRepository.save(invoice);
+
+        auditLogService.log(
+                AuditAction.CREATE_INVOICE,
+                "Customer " + customer.getFullName() + " checked out products, Invoice ID " + invoice.getId()
+        );
+
+        return new InvoiceResponse(
+                invoice.getId(),
+                total,
+                invoice.getPaymentMode().name(),
+                invoice.getCreatedAt(),
+                responseItems
+        );
+    }
+
     public Page<InvoiceResponse> getSalonInvoices(Pageable pageable) {
         String salonName = salonService.getCurrentSalon().getName();
 
