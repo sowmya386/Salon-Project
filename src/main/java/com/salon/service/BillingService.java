@@ -171,7 +171,7 @@ public class BillingService {
             else if (payMethod.equalsIgnoreCase("Cash on Delivery")) invoice.setPaymentMode(PaymentMode.CASH);
             else invoice.setPaymentMode(PaymentMode.valueOf(payMethod.toUpperCase()));
         } catch (Exception e) {
-            invoice.setPaymentMode(PaymentMode.ONLINE); // fallback
+            invoice.setPaymentMode(PaymentMode.UPI); // fallback
         }
 
         invoice = invoiceRepository.save(invoice);

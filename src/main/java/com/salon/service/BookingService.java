@@ -105,7 +105,7 @@ public class BookingService {
                 else if (payMethod.equalsIgnoreCase("Card")) invoice.setPaymentMode(PaymentMode.CARD);
                 else invoice.setPaymentMode(PaymentMode.valueOf(payMethod.toUpperCase()));
             } catch (Exception e) {
-                invoice.setPaymentMode(PaymentMode.ONLINE); // fallback
+                invoice.setPaymentMode(PaymentMode.UPI); // fallback
             }
             invoice.setCustomer(customer);
             invoice.setBooking(booking);

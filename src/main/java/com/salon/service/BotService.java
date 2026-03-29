@@ -101,9 +101,9 @@ public class BotService {
                 DashboardSummaryResponse summary = dashboardService.getSummary();
                 return new BotResponse(
                     "Good day, Administrator.\nHere is your requested formal business summary for **" + salonName + "**:\n\n" +
-                    "• **Total Revenue (Last 7 Days):** ₹" + summary.getRevenue() + "\n" +
+                    "• **Total Revenue (Last 7 Days):** ₹" + summary.getTotalRevenue() + "\n" +
                     "• **New Customers:** " + summary.getNewCustomers() + "\n" +
-                    "• **Today's Bookings:** " + summary.getTodayBookings() + "\n" +
+                    "• **Today's Bookings:** " + summary.getBookingsToday() + "\n" +
                     "• **Completed Appointments:** " + summary.getCompletedBookings() + "\n\n" +
                     "Please refer to the Admin Dashboard for comprehensive analytics."
                 );
