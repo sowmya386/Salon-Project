@@ -76,7 +76,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 	            Pageable pageable
 	    );
     	
-    	    long countBySalonNameAndAppointmentTimeBetween(
+    	    long countBySalonNameAndAppointmentTimeGreaterThanEqualAndAppointmentTimeLessThan(
     	            String salonName,
     	            LocalDateTime start,
     	            LocalDateTime end

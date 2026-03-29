@@ -40,10 +40,10 @@ public class DashboardService {
         LocalDateTime startToday = today.atStartOfDay();
         LocalDateTime endToday = today.plusDays(1).atStartOfDay();
 
-        LocalDateTime startWeek = today.minusDays(7).atStartOfDay();
+        LocalDateTime startWeek = today.minusDays(6).atStartOfDay();
 
         long bookingsToday =
-                bookingRepository.countBySalonNameAndAppointmentTimeBetween(
+                bookingRepository.countBySalonNameAndAppointmentTimeGreaterThanEqualAndAppointmentTimeLessThan(
                         salonName, startToday, endToday);
 
         long completed =
@@ -51,7 +51,7 @@ public class DashboardService {
                         salonName, BookingStatus.COMPLETED);
 
         long bookingsThisWeek =
-        		 bookingRepository.countBySalonNameAndAppointmentTimeBetween(
+        		 bookingRepository.countBySalonNameAndAppointmentTimeGreaterThanEqualAndAppointmentTimeLessThan(
                 		salonName, startWeek, endToday);
 
         long cancelled =
@@ -59,8 +59,24 @@ public class DashboardService {
                 		salonName, BookingStatus.CANCELLED);
 
         double revenue = invoiceRepository.getTotalRevenue(salonName);
+        long totalCustomers = userRepository.countNewCustomersBySalonName(salonName, startWeek, endToday);
+
+        // Calculate 7-day revenue for the dashboard chart
+        java.util.List<java.util.Map<String, Object>> weeklyRevenueMap = new java.util.ArrayList<>();
+        java.time.format.DateTimeFormatter dayFormatter = java.time.format.DateTimeFormatter.ofPattern("EEE");
         
-        long totalCustomers = userRepository.countCustomersBySalonName(salonName);
+        for (int i = 6; i >= 0; i--) {
+            LocalDate day = today.minusDays(i);
+            LocalDateTime startOfDay = day.atStartOfDay();
+            LocalDateTime endOfDay = day.plusDays(1).atStartOfDay();
+            
+            double dailyRev = invoiceRepository.getRevenueBetween(salonName, startOfDay, endOfDay);
+            
+            java.util.Map<String, Object> dayData = new java.util.HashMap<>();
+            dayData.put("name", day.format(dayFormatter)); // e.g. "Mon"
+            dayData.put("revenue", dailyRev);
+            weeklyRevenueMap.add(dayData);
+        }
 
         return new DashboardSummaryResponse(
                 bookingsToday,
@@ -68,7 +84,8 @@ public class DashboardService {
                 completed,
                 cancelled,
                 revenue,
-                totalCustomers
+                totalCustomers,
+                weeklyRevenueMap
         );
     }
 

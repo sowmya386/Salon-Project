@@ -43,4 +43,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     @Query("SELECT COUNT(u) FROM User u JOIN u.userRoles ur WHERE u.salonName = :salonName AND ur.role.name = 'ROLE_CUSTOMER'")
     long countCustomersBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName);
+
+    @Query("SELECT COUNT(u) FROM User u JOIN u.userRoles ur WHERE u.salonName = :salonName AND ur.role.name = 'ROLE_CUSTOMER' AND u.createdAt >= :start AND u.createdAt < :end")
+    long countNewCustomersBySalonName(
+            @org.springframework.data.repository.query.Param("salonName") String salonName,
+            @org.springframework.data.repository.query.Param("start") java.time.LocalDateTime start,
+            @org.springframework.data.repository.query.Param("end") java.time.LocalDateTime end
+    );
 }
