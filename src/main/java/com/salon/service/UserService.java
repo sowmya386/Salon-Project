@@ -193,8 +193,17 @@ public class UserService {
     public User findOrCreateFromSupabase(SupabaseUserInfo info, String salonName, String roleName) {
         String name = (salonName != null && !salonName.isBlank()) ? salonName : defaultSalonName;
 
+        // 1. Get or create the salon if Admin, else just find it
         Salon salon = salonRepository.findByNameIgnoreCase(name)
-                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", name));
+                .orElseGet(() -> {
+                    if ("ROLE_ADMIN".equals(roleName)) {
+                        Salon newSalon = new Salon();
+                        newSalon.setName(name);
+                        newSalon.setApprovalStatus(ApprovalStatus.PENDING);
+                        return salonRepository.save(newSalon);
+                    }
+                    throw new ResourceNotFoundException("Salon", "name", name);
+                });
 
         // Find by email and salonName
         var existingByEmail = userRepository.findByEmailAndSalonName(info.email(), salon.getName());
@@ -221,6 +230,8 @@ public class UserService {
 
         if ("ROLE_ADMIN".equals(roleName)) {
             user.setApprovalStatus(ApprovalStatus.PENDING);
+        } else {
+            user.setApprovalStatus(ApprovalStatus.APPROVED);
         }
 
         user = userRepository.save(user);
