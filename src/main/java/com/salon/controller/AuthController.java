@@ -108,44 +108,51 @@ public class AuthController {
     public ResponseEntity<LoginResponse> supabaseExchange(
             @Valid @RequestBody SupabaseExchangeRequest request) {
 
-        var info = supabaseJwtVerifier.verifyAndExtract(request.getAccessToken());
+        try {
+            var info = supabaseJwtVerifier.verifyAndExtract(request.getAccessToken());
 
-        User user = userService.findOrCreateFromSupabase(
-                info,
-                request.getSalonName(),
-                request.getRole() != null ? request.getRole() : "ROLE_CUSTOMER"
-        );
+            User user = userService.findOrCreateFromSupabase(
+                    info,
+                    request.getSalonName(),
+                    request.getRole() != null ? request.getRole() : "ROLE_CUSTOMER"
+            );
 
-        // Admin approval check (same as email/password login)
-        boolean isAdmin = user.getUserRoles().stream()
-                .anyMatch(ur -> "ROLE_ADMIN".equals(ur.getRole().getName()));
-        if (isAdmin) {
-            if (user.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
-                throw new RuntimeException("Admin account not approved yet");
-            }
-            if (user.getSalonName() != null) {
-                Salon salon = salonRepository.findByNameIgnoreCase(user.getSalonName()).orElseThrow();
-                if (salon.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
-                    throw new RuntimeException("Salon not approved yet");
+            // Admin approval check
+            boolean isAdmin = user.getUserRoles().stream()
+                    .anyMatch(ur -> "ROLE_ADMIN".equals(ur.getRole().getName()));
+            if (isAdmin) {
+                if (user.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
+                    return ResponseEntity.status(403).body(new LoginResponse("Admin account not approved yet"));
+                }
+                if (user.getSalonName() != null) {
+                    Salon salon = salonRepository.findByNameIgnoreCase(user.getSalonName()).orElseThrow();
+                    if (salon.getApprovalStatus() != com.salon.entity.ApprovalStatus.APPROVED) {
+                        return ResponseEntity.status(403).body(new LoginResponse("Salon not approved yet"));
+                    }
                 }
             }
+
+            List<String> roles = user.getUserRoles()
+                    .stream()
+                    .map(ur -> ur.getRole().getName())
+                    .toList();
+
+            String salonName = user.getSalonName();
+
+            String token = jwtUtil.generateToken(
+                    user.getId(),
+                    user.getEmail(),
+                    salonName,
+                    roles
+            );
+
+            return ResponseEntity.ok(new LoginResponse(token));
+
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            return ResponseEntity.status(401).body(new LoginResponse("Unauthorized: " + e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new LoginResponse("Failed to process Google Login: " + e.getMessage()));
         }
-
-        List<String> roles = user.getUserRoles()
-                .stream()
-                .map(ur -> ur.getRole().getName())
-                .toList();
-
-        String salonName = user.getSalonName();
-
-        String token = jwtUtil.generateToken(
-                user.getId(),
-                user.getEmail(),
-                salonName,
-                roles
-        );
-
-        return ResponseEntity.ok(new LoginResponse(token));
     }
 
     // ================= FORGOT PASSWORD =================
