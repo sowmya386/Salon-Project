@@ -148,7 +148,10 @@ public class BillingService {
                 total,
                 invoice.getPaymentMode().name(),
                 invoice.getCreatedAt(),
-                responseItems
+                responseItems,
+                invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : "Customer",
+                invoice.getCustomer() != null ? invoice.getCustomer().getEmail() : "",
+                invoice.getCustomer() != null && invoice.getCustomer().getPhone() != null ? invoice.getCustomer().getPhone() : ""
         );
     }
 
@@ -227,7 +230,10 @@ public class BillingService {
                 total,
                 invoice.getPaymentMode().name(),
                 invoice.getCreatedAt(),
-                responseItems
+                responseItems,
+                invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : "Customer",
+                invoice.getCustomer() != null ? invoice.getCustomer().getEmail() : "",
+                invoice.getCustomer() != null && invoice.getCustomer().getPhone() != null ? invoice.getCustomer().getPhone() : ""
         );
     }
 
@@ -248,7 +254,10 @@ public class BillingService {
                                         i.getQuantity(),
                                         i.getAmount()
                                 ))
-                                .toList()
+                                .toList(),
+                        invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : "Customer",
+                        invoice.getCustomer() != null ? invoice.getCustomer().getEmail() : "",
+                        invoice.getCustomer() != null && invoice.getCustomer().getPhone() != null ? invoice.getCustomer().getPhone() : ""
                 ));
     }
     public Page<InvoiceResponse> getCustomerInvoices(Pageable pageable) {
@@ -270,7 +279,10 @@ public class BillingService {
                                         i.getQuantity(),
                                         i.getAmount()
                                 ))
-                                .toList()
+                                .toList(),
+                        invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : "Customer",
+                        invoice.getCustomer() != null ? invoice.getCustomer().getEmail() : "",
+                        invoice.getCustomer() != null && invoice.getCustomer().getPhone() != null ? invoice.getCustomer().getPhone() : ""
                 ));
     }
 

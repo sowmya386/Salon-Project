@@ -220,6 +220,12 @@ public class AdminController {
     }
 
 
+    @GetMapping("/dashboard/top-customers")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<com.salon.dto.TopCustomerResponse>> getTopCustomers() {
+        return ResponseEntity.ok(dashboardService.getTopCustomers());
+    }
+
     @GetMapping("/pending-admins")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<com.salon.dto.CustomerProfileResponse>> getPendingAdmins() {

@@ -98,4 +98,18 @@ public class DashboardService {
         String salonName = salonService.getCurrentSalon().getName();
         return serviceRepository.findTopServices(salonName);
     }
+
+    public List<TopCustomerResponse> getTopCustomers() {
+        String salonName = salonService.getCurrentSalon().getName();
+        return invoiceRepository.findTopCustomersBySpend(salonName, org.springframework.data.domain.PageRequest.of(0, 5))
+            .stream()
+            .map(row -> new TopCustomerResponse(
+                (Long) row[0],
+                (String) row[1],
+                (String) row[2],
+                (Double) row[3],
+                ((Number) row[4]).longValue() 
+            ))
+            .toList();
+    }
 }
