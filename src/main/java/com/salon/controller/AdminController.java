@@ -220,11 +220,16 @@ public class AdminController {
     }
 
 
-   
+    @GetMapping("/pending-admins")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<com.salon.dto.CustomerProfileResponse>> getPendingAdmins() {
+        return ResponseEntity.ok(userService.getPendingAdminsForSalon());
+    }
 
-
-
-
-
-
+    @PutMapping("/pending-admins/{id}/approve")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> approvePendingAdmin(@PathVariable Long id) {
+        userService.approvePendingAdminLocally(id);
+        return ResponseEntity.ok("Admin formally approved for the salon.");
+    }
 }

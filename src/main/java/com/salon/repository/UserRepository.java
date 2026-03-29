@@ -38,6 +38,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     """)
     void approveAdminsBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName);
 
+    @Query("SELECT u FROM User u JOIN u.userRoles ur WHERE u.salonName = :salonName AND ur.role.name = 'ROLE_ADMIN' AND u.approvalStatus = 'PENDING'")
+    java.util.List<User> findPendingAdminsBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName);
+
     @Query("SELECT u FROM User u JOIN u.userRoles ur WHERE u.salonName = :salonName AND ur.role.name = 'ROLE_CUSTOMER'")
     org.springframework.data.domain.Page<User> findCustomersBySalonName(@org.springframework.data.repository.query.Param("salonName") String salonName, org.springframework.data.domain.Pageable pageable);
 

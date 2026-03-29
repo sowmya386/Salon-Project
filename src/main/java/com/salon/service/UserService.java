@@ -259,4 +259,32 @@ public class UserService {
         customer.setProfileImageUrl(request.getProfileImageUrl());
         return userRepository.save(customer);
     }
+
+    public java.util.List<com.salon.dto.CustomerProfileResponse> getPendingAdminsForSalon() {
+        String salonName = com.salon.security.SecurityUtil.getCurrentSalonName();
+        return userRepository.findPendingAdminsBySalonName(salonName)
+            .stream()
+            .map(u -> new com.salon.dto.CustomerProfileResponse(u.getId(), u.getFullName(), u.getEmail(), u.getPhone(), u.getSalonName(), null, null))
+            .collect(java.util.stream.Collectors.toList());
+    }
+
+    public void approvePendingAdminLocally(Long targetUserId) {
+        String currentSalonName = com.salon.security.SecurityUtil.getCurrentSalonName();
+        User pendingUser = userRepository.findById(targetUserId)
+            .orElseThrow(() -> new com.salon.exception.ResourceNotFoundException("User", "id", targetUserId.toString()));
+
+        if (!currentSalonName.equalsIgnoreCase(pendingUser.getSalonName())) {
+            throw new com.salon.exception.ForbiddenException("You can only approve admins for your own salon.");
+        }
+
+        boolean isTargetAdmin = pendingUser.getUserRoles().stream()
+            .anyMatch(ur -> ur.getRole().getName().equals("ROLE_ADMIN"));
+        
+        if (!isTargetAdmin) {
+            throw new com.salon.exception.BadRequestException("Target user is not registered as an Admin.");
+        }
+
+        pendingUser.setApprovalStatus(com.salon.entity.ApprovalStatus.APPROVED);
+        userRepository.save(pendingUser);
+    }
 }
