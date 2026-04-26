@@ -140,11 +140,11 @@
 			<groupId>com.github.ben-manes.caffeine</groupId>
 			<artifactId>caffeine</artifactId>
 		</dependency>
-		<!-- Stripe: low-cost payments, 2.9%+$0.30 per transaction, no monthly fee -->
+		<!-- Razorpay -->
 		<dependency>
-			<groupId>com.stripe</groupId>
-			<artifactId>stripe-java</artifactId>
-			<version>28.2.0</version>
+			<groupId>com.razorpay</groupId>
+			<artifactId>razorpay-java</artifactId>
+			<version>1.4.6</version>
 		</dependency>
 
 	</dependencies>

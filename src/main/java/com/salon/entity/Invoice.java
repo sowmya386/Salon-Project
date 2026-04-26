@@ -16,16 +16,28 @@ public class Invoice {
     @Column(name = "salon_name", nullable = false)
     private String salonName;
 
+    @Column(unique = true)
+    private String invoiceNumber;
+
     @ManyToOne
     private User customer;
+
+    private String customerName; // For walk-ins
+    private String customerPhone; // For walk-ins
 
     @OneToOne
     private Booking booking; // nullable (product-only bill)
 
+    private Double subtotal;
+    private Double discount;
+    private Double gstTotal;
     private Double totalAmount;
 
     @Enumerated(EnumType.STRING)
     private PaymentMode paymentMode;
+
+    @Enumerated(EnumType.STRING)
+    private InvoiceStatus status = InvoiceStatus.PENDING;
 
     private LocalDateTime createdAt;
 
@@ -55,6 +67,27 @@ public class Invoice {
 
     public Double getTotalAmount() { return totalAmount; }
     public void setTotalAmount(Double totalAmount) { this.totalAmount = totalAmount; }
+
+    public Double getSubtotal() { return subtotal; }
+    public void setSubtotal(Double subtotal) { this.subtotal = subtotal; }
+
+    public Double getDiscount() { return discount; }
+    public void setDiscount(Double discount) { this.discount = discount; }
+
+    public Double getGstTotal() { return gstTotal; }
+    public void setGstTotal(Double gstTotal) { this.gstTotal = gstTotal; }
+
+    public String getInvoiceNumber() { return invoiceNumber; }
+    public void setInvoiceNumber(String invoiceNumber) { this.invoiceNumber = invoiceNumber; }
+
+    public String getCustomerName() { return customerName; }
+    public void setCustomerName(String customerName) { this.customerName = customerName; }
+
+    public String getCustomerPhone() { return customerPhone; }
+    public void setCustomerPhone(String customerPhone) { this.customerPhone = customerPhone; }
+
+    public InvoiceStatus getStatus() { return status; }
+    public void setStatus(InvoiceStatus status) { this.status = status; }
 
     public PaymentMode getPaymentMode() { return paymentMode; }
     public void setPaymentMode(PaymentMode paymentMode) { this.paymentMode = paymentMode; }

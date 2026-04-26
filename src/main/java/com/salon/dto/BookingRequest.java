@@ -37,4 +37,8 @@ public class BookingRequest {
     
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    private Integer redeemLoyaltyPoints;
+    public Integer getRedeemLoyaltyPoints() { return redeemLoyaltyPoints; }
+    public void setRedeemLoyaltyPoints(Integer redeemLoyaltyPoints) { this.redeemLoyaltyPoints = redeemLoyaltyPoints; }
 }

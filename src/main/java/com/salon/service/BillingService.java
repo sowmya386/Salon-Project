@@ -25,6 +25,7 @@ public class BillingService {
     private final SalonService salonService;
     private final AuditLogService auditLogService;
     private final UserRepository userRepository;
+    private final ProductSaleRepository productSaleRepository;
 
     public BillingService(
             InvoiceRepository invoiceRepository,
@@ -34,7 +35,8 @@ public class BillingService {
             ServiceRepository serviceRepository,
             SalonService salonService,
             AuditLogService auditLogService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            ProductSaleRepository productSaleRepository) {
 
         this.invoiceRepository = invoiceRepository;
         this.invoiceItemRepository = invoiceItemRepository;
@@ -44,6 +46,7 @@ public class BillingService {
         this.salonService = salonService;
         this.auditLogService = auditLogService;
         this.userRepository = userRepository;
+        this.productSaleRepository = productSaleRepository;
     }
 
     @Transactional
@@ -115,6 +118,15 @@ public class BillingService {
                 item.setPrice(product.getPrice());
                 item.setQuantity(itemReq.getQuantity());
                 item.setItemType(ItemType.PRODUCT);
+
+                ProductSale sale = new ProductSale();
+                sale.setProduct(product);
+                sale.setInvoice(invoice);
+                sale.setQuantity(itemReq.getQuantity());
+                sale.setPricePerUnit(product.getPrice());
+                sale.setTotalRevenue(product.getPrice() * itemReq.getQuantity());
+                sale.setSalonName(salonName);
+                productSaleRepository.save(sale);
 
             } else {
                 throw new RuntimeException("Invalid item type");
@@ -202,6 +214,15 @@ public class BillingService {
             item.setQuantity(itemReq.getQuantity());
             item.setItemType(ItemType.PRODUCT);
 
+            ProductSale sale = new ProductSale();
+            sale.setProduct(product);
+            sale.setInvoice(invoice);
+            sale.setQuantity(itemReq.getQuantity());
+            sale.setPricePerUnit(product.getPrice());
+            sale.setTotalRevenue(product.getPrice() * itemReq.getQuantity());
+            sale.setSalonName(salonName);
+            productSaleRepository.save(sale);
+
             double amount = item.getPrice() * item.getQuantity();
             item.setAmount(amount);
 
@@ -224,6 +245,12 @@ public class BillingService {
                 AuditAction.CREATE_INVOICE,
                 "Customer " + customer.getFullName() + " checked out products, Invoice ID " + invoice.getId()
         );
+
+        int pointsEarned = (int) total;
+        if (pointsEarned > 0) {
+            customer.setLoyaltyPoints((customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0) + pointsEarned);
+            userRepository.save(customer);
+        }
 
         return new InvoiceResponse(
                 invoice.getId(),
@@ -286,4 +313,111 @@ public class BillingService {
                 ));
     }
 
+    @Transactional
+    public InvoiceResponse createManualInvoice(ManualInvoiceRequest request) {
+        Salon salon = salonService.getCurrentSalon();
+        String salonName = salon.getName();
+
+        Invoice invoice = new Invoice();
+        invoice.setSalonName(salonName);
+        invoice.setPaymentMode(PaymentMode.valueOf(request.getPaymentMode() != null ? request.getPaymentMode() : "CASH"));
+        
+        // Match existing user by phone if possible
+        if (request.getCustomerPhone() != null && !request.getCustomerPhone().isBlank()) {
+            User existingUser = userRepository.findFirstByEmail(request.getCustomerPhone() + "@placeholder.com").orElse(null);
+            if (existingUser != null) {
+                invoice.setCustomer(existingUser);
+            } else {
+                invoice.setCustomerName(request.getCustomerName());
+                invoice.setCustomerPhone(request.getCustomerPhone());
+            }
+        } else {
+            invoice.setCustomerName(request.getCustomerName());
+        }
+
+        invoice.setInvoiceNumber("INV-" + java.time.Year.now().getValue() + "-" + (int)(Math.random() * 10000));
+        invoice.setStatus(InvoiceStatus.PAID);
+        invoice = invoiceRepository.save(invoice);
+
+        double subtotal = 0;
+        List<InvoiceItemResponse> responseItems = new ArrayList<>();
+
+        for (BillingItemRequest itemReq : request.getItems()) {
+            InvoiceItem item = new InvoiceItem();
+            item.setInvoice(invoice);
+
+            if ("SERVICE".equals(itemReq.getItemType())) {
+                Service service = serviceRepository.findByIdAndSalonName(itemReq.getItemId(), salonName)
+                        .orElseThrow(() -> new RuntimeException("Service not found"));
+                item.setItemName(service.getName());
+                item.setPrice(service.getPrice());
+                item.setQuantity(1);
+                item.setItemType(ItemType.SERVICE);
+            } else if ("PRODUCT".equals(itemReq.getItemType())) {
+                Product product = productRepository.findByIdAndSalonName(itemReq.getItemId(), salonName)
+                        .orElseThrow(() -> new RuntimeException("Product not found"));
+                if (product.getStock() < itemReq.getQuantity()) {
+                    throw new RuntimeException("Insufficient stock for product");
+                }
+                product.setStock(product.getStock() - itemReq.getQuantity());
+                productRepository.save(product);
+
+                item.setItemName(product.getName());
+                item.setPrice(product.getPrice());
+                item.setQuantity(itemReq.getQuantity());
+                item.setItemType(ItemType.PRODUCT);
+
+                ProductSale sale = new ProductSale();
+                sale.setProduct(product);
+                sale.setInvoice(invoice);
+                sale.setQuantity(itemReq.getQuantity());
+                sale.setPricePerUnit(product.getPrice());
+                sale.setTotalRevenue(product.getPrice() * itemReq.getQuantity());
+                sale.setSalonName(salonName);
+                productSaleRepository.save(sale);
+            } else {
+                throw new RuntimeException("Invalid item type");
+            }
+
+            double amount = item.getPrice() * item.getQuantity();
+            item.setAmount(amount);
+            invoiceItemRepository.save(item);
+            subtotal += amount;
+
+            responseItems.add(new InvoiceItemResponse(item.getItemName(), item.getItemType().name(), item.getPrice(), item.getQuantity(), amount));
+        }
+
+        double discount = request.getDiscount() != null ? request.getDiscount() : 0.0;
+        double taxableAmount = subtotal - discount;
+        double gstTotal = taxableAmount * 0.18; // 18% GST example
+        double totalAmount = taxableAmount + gstTotal;
+
+        invoice.setSubtotal(subtotal);
+        invoice.setDiscount(discount);
+        invoice.setGstTotal(gstTotal);
+        invoice.setTotalAmount(totalAmount);
+        invoiceRepository.save(invoice);
+
+        auditLogService.log(AuditAction.CREATE_INVOICE, "Manual Invoice created with ID " + invoice.getInvoiceNumber());
+
+        if (invoice.getCustomer() != null) {
+            int pointsEarned = (int) totalAmount;
+            if (pointsEarned > 0) {
+                User customer = invoice.getCustomer();
+                customer.setLoyaltyPoints((customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0) + pointsEarned);
+                userRepository.save(customer);
+            }
+        }
+
+        return new InvoiceResponse(
+                invoice.getId(),
+                totalAmount,
+                invoice.getPaymentMode().name(),
+                invoice.getCreatedAt(),
+                responseItems,
+                invoice.getCustomer() != null ? invoice.getCustomer().getFullName() : invoice.getCustomerName(),
+                invoice.getCustomer() != null ? invoice.getCustomer().getEmail() : "",
+                invoice.getCustomer() != null && invoice.getCustomer().getPhone() != null ? invoice.getCustomer().getPhone() : invoice.getCustomerPhone()
+        );
+    }
 }

@@ -46,7 +46,7 @@ public class User {
 	    @Column(nullable = false)
 	    private LocalDateTime createdAt = LocalDateTime.now();
 
-	    @Column(name = "salon_name", nullable = false)
+	    @Column(name = "salon_name", nullable = true)
 	    private String salonName;
 
 	    @Enumerated(EnumType.STRING)

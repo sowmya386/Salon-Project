@@ -179,6 +179,14 @@ public class AdminController {
         return ResponseEntity.ok(productService.deactivateProduct(productId));
     }
 
+    @PostMapping("/invoices/manual")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<InvoiceResponse> createManualInvoice(
+            @Valid @RequestBody com.salon.dto.ManualInvoiceRequest request) {
+
+        return ResponseEntity.ok(billingService.createManualInvoice(request));
+    }
+
     @PostMapping("/invoices")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<InvoiceResponse> createInvoice(

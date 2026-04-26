@@ -93,6 +93,25 @@ public class BookingService {
         
         emailService.sendBookingConfirmation(booking);
 
+        // Handle Loyalty Points Redemption
+        int pointsRedeemed = request.getRedeemLoyaltyPoints() != null ? request.getRedeemLoyaltyPoints() : 0;
+        double discount = 0;
+        if (pointsRedeemed > 0) {
+            int currentPoints = customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0;
+            if (currentPoints < pointsRedeemed) {
+                pointsRedeemed = currentPoints; // redeem max possible
+            }
+            // 600 points = Rs 10 -> 60 points = Rs 1
+            discount = Math.floor((double) pointsRedeemed / 60.0);
+            
+            // Deduct points
+            customer.setLoyaltyPoints(currentPoints - pointsRedeemed);
+            userRepository.save(customer);
+        }
+
+        double finalPrice = service.getPrice() - discount;
+        if (finalPrice < 0) finalPrice = 0;
+
         // Auto-generate invoice for prepaid transactions
         String payMethod = request.getPaymentMethod();
         if (payMethod != null && !payMethod.equalsIgnoreCase("Pay at Salon")) {
@@ -109,7 +128,9 @@ public class BookingService {
             }
             invoice.setCustomer(customer);
             invoice.setBooking(booking);
-            invoice.setTotalAmount(service.getPrice());
+            invoice.setSubtotal(service.getPrice());
+            invoice.setDiscount(discount);
+            invoice.setTotalAmount(finalPrice);
             
             invoice = invoiceRepository.save(invoice);
             
@@ -127,6 +148,13 @@ public class BookingService {
                 AuditAction.CREATE_INVOICE,
                 "Auto-generated Prepaid Invoice ID " + invoice.getId() + " for Booking " + booking.getId()
             );
+        }
+
+        // Award points based on final price
+        int pointsEarned = (int) finalPrice;
+        if (pointsEarned > 0) {
+            customer.setLoyaltyPoints((customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0) + pointsEarned);
+            userRepository.save(customer);
         }
 
         return mapToResponse(booking);
@@ -272,7 +300,8 @@ public class BookingService {
                 booking.getAppointmentTime(),
                 booking.getStatus(),
                 booking.getAddress(),
-                booking.getCancellationMessage()
+                booking.getCancellationMessage(),
+                booking.getSalonName()
         );
     }
 }

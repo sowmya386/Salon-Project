@@ -12,6 +12,7 @@ public class BookingResponse {
     private BookingStatus status;
     private String address;
     private String cancellationMessage;
+    private String salonName;
 
     public BookingResponse(Long bookingId,
                            String serviceName,
@@ -19,7 +20,8 @@ public class BookingResponse {
                            LocalDateTime appointmentTime,
                            BookingStatus status,
                            String address,
-                           String cancellationMessage) {
+                           String cancellationMessage,
+                           String salonName) {
         this.bookingId = bookingId;
         this.serviceName = serviceName;
         this.customerName = customerName;
@@ -27,33 +29,15 @@ public class BookingResponse {
         this.status = status;
         this.address = address;
         this.cancellationMessage = cancellationMessage;
+        this.salonName = salonName;
     }
 
-    public Long getBookingId() {
-        return bookingId;
-    }
-
-    public String getServiceName() {
-        return serviceName;
-    }
-
-    public String getCustomerName() {
-        return customerName;
-    }
-
-    public LocalDateTime getAppointmentTime() {
-        return appointmentTime;
-    }
-
-    public BookingStatus getStatus() {
-        return status;
-    }
-
-    public String getAddress() {
-        return address;
-    }
-
-    public String getCancellationMessage() {
-        return cancellationMessage;
-    }
+    public Long getBookingId() { return bookingId; }
+    public String getServiceName() { return serviceName; }
+    public String getCustomerName() { return customerName; }
+    public LocalDateTime getAppointmentTime() { return appointmentTime; }
+    public BookingStatus getStatus() { return status; }
+    public String getAddress() { return address; }
+    public String getCancellationMessage() { return cancellationMessage; }
+    public String getSalonName() { return salonName; }
 }

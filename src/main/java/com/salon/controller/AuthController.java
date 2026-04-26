@@ -49,10 +49,23 @@ public class AuthController {
     }
  // ================= CUSTOMER REGISTRATION =================
     @PostMapping("/customers/register")
-    public ResponseEntity<?> registerCustomer(
+    public ResponseEntity<LoginResponse> registerCustomer(
             @Valid @RequestBody CustomerRegisterRequest request) {
-        userService.registerCustomerSelf(request); // ✅ method exists in UserService
-        return ResponseEntity.ok("Customer registered successfully");
+        User user = userService.registerCustomerSelf(request);
+        
+        List<String> roles = user.getUserRoles()
+                .stream()
+                .map(ur -> ur.getRole().getName())
+                .toList();
+
+        String token = jwtUtil.generateToken(
+                user.getId(),
+                user.getEmail(),
+                user.getSalonName(),
+                roles
+        );
+
+        return ResponseEntity.ok(new LoginResponse(token));
     }
 
     // ================= SPECIFIC POSTMAN LOGIN ENDPOINTS =================

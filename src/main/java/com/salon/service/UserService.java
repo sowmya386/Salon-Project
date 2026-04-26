@@ -42,13 +42,6 @@ public class UserService {
 
     // ================= CUSTOMER SELF REGISTRATION =================
     public User registerCustomerSelf(CustomerRegisterRequest request) {
-        String salonName = (request.getSalonName() != null && !request.getSalonName().isBlank())
-                ? request.getSalonName() : defaultSalonName;
-
-        Salon salon = salonRepository
-                .findByNameIgnoreCase(salonName)
-                .orElseThrow(() -> new ResourceNotFoundException("Salon", "name", salonName));
-
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new EmailAlreadyExistsException(
                     "Email already exists. Please log in or use a different email."
@@ -60,7 +53,7 @@ public class UserService {
         customer.setEmail(request.getEmail());
         customer.setPassword(passwordEncoder.encode(request.getPassword()));
         customer.setPhone(request.getPhone());
-        customer.setSalonName(salon.getName());
+        customer.setSalonName(null); // Customers are global
         customer.setActive(true);
         customer.setApprovalStatus(ApprovalStatus.APPROVED);
 
