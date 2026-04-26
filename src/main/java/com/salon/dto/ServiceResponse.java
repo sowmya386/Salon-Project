@@ -6,12 +6,14 @@ public class ServiceResponse {
     private String name;
     private Double price;
     private Integer durationInMinutes;
+    private String imageUrl;
 
-    public ServiceResponse(Long id, String name, Double price, Integer durationInMinutes) {
+    public ServiceResponse(Long id, String name, Double price, Integer durationInMinutes, String imageUrl) {
         this.id = id;
         this.name = name;
         this.price = price;
         this.durationInMinutes = durationInMinutes;
+        this.imageUrl = imageUrl;
     }
 
     public Long getId() {
@@ -28,6 +30,10 @@ public class ServiceResponse {
 
     public Integer getDurationInMinutes() {
         return durationInMinutes;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
     }
 
 }

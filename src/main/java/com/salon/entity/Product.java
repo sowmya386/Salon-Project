@@ -14,6 +14,8 @@ public class Product {
     private String name;
     private String description;
     private Double price;
+    @Column(name = "image_url")
+    private String imageUrl;
     private Integer stock;
     private Integer lowStockThreshold = 5;  // Alert when below this
     private boolean active = true;
@@ -39,6 +41,9 @@ public class Product {
 
     public Double getPrice() { return price; }
     public void setPrice(Double price) { this.price = price; }
+
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 
     public Integer getStock() { return stock; }
     public void setStock(Integer stock) { this.stock = stock; }

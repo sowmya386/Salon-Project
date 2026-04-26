@@ -17,6 +17,9 @@ public class Service {
 
     private Integer durationInMinutes;
 
+    @Column(name = "image_url")
+    private String imageUrl;
+
     private boolean active = true;
 
     @Column(name = "salon_name", nullable = false)
@@ -55,6 +58,14 @@ public class Service {
 
     public void setDurationInMinutes(Integer durationInMinutes) {
         this.durationInMinutes = durationInMinutes;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public boolean isActive() {

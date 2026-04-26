@@ -25,6 +25,8 @@ public class Salon {
 
     private String phone;
 
+    @Column(name = "image_url")
+    private String imageUrl;
     @Column(nullable = false)
     private boolean active = true;
 
@@ -57,6 +59,9 @@ public class Salon {
 
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
+
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }

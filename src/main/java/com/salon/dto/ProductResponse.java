@@ -7,14 +7,16 @@ public class ProductResponse {
     private String description;
     private Double price;
     private Integer stock;
+    private String imageUrl;
 
     public ProductResponse(Long id, String name, String description,
-                           Double price, Integer stock) {
+                           Double price, Integer stock, String imageUrl) {
         this.id = id;
         this.name = name;
         this.description = description;
         this.price = price;
         this.stock = stock;
+        this.imageUrl = imageUrl;
     }
 
     // getters
@@ -23,4 +25,5 @@ public class ProductResponse {
     public String getDescription() { return description; }
     public Double getPrice() { return price; }
     public Integer getStock() { return stock; }
+    public String getImageUrl() { return imageUrl; }
 }

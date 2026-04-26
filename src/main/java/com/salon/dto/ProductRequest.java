@@ -15,6 +15,8 @@ public class ProductRequest {
     @NotNull @Min(0)
     private Integer stock;
 
+    private String imageUrl;
+
     // getters & setters
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -27,4 +29,7 @@ public class ProductRequest {
 
     public Integer getStock() { return stock; }
     public void setStock(Integer stock) { this.stock = stock; }
+
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 }

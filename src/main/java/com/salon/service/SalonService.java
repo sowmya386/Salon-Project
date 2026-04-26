@@ -50,6 +50,17 @@ public class SalonService {
         return salonRepository.save(salon);
     }
 
+    public Salon updateSalonSettings(com.salon.dto.SalonSettingsRequest request) {
+        Salon salon = getCurrentSalon();
+        if (request.getDescription() != null) {
+            salon.setDescription(request.getDescription());
+        }
+        if (request.getImageUrl() != null) {
+            salon.setImageUrl(request.getImageUrl());
+        }
+        return salonRepository.save(salon);
+    }
+
     public List<Salon> getAllApprovedSalons() {
         return salonRepository.findByApprovalStatus(ApprovalStatus.APPROVED);
     }

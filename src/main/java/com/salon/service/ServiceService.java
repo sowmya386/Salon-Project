@@ -44,6 +44,7 @@ public class ServiceService {
         service.setName(request.getName());
         service.setPrice(request.getPrice());
         service.setDurationInMinutes(request.getDurationInMinutes());
+        service.setImageUrl(request.getImageUrl());
         service.setSalonName(salon.getName());
 
         service = serviceRepository.save(service);
@@ -57,7 +58,8 @@ public class ServiceService {
                 service.getId(),
                 service.getName(),
                 service.getPrice(),
-                service.getDurationInMinutes()
+                service.getDurationInMinutes(),
+                service.getImageUrl()
         );
     }
 
@@ -69,10 +71,11 @@ public class ServiceService {
         service.setName(request.getName());
         service.setPrice(request.getPrice());
         service.setDurationInMinutes(request.getDurationInMinutes());
+        service.setImageUrl(request.getImageUrl());
         service = serviceRepository.save(service);
         auditLogService.log(AuditAction.UPDATE_SERVICE, "Admin updated service ID " + service.getId());
         
-        return new ServiceResponse(service.getId(), service.getName(), service.getPrice(), service.getDurationInMinutes());
+        return new ServiceResponse(service.getId(), service.getName(), service.getPrice(), service.getDurationInMinutes(), service.getImageUrl());
     }
 
     // CUSTOMER + ADMIN
@@ -85,7 +88,8 @@ public class ServiceService {
                         s.getId(),
                         s.getName(),
                         s.getPrice(),
-                        s.getDurationInMinutes()
+                        s.getDurationInMinutes(),
+                        s.getImageUrl()
                 ))
                 .toList();
 
@@ -98,7 +102,8 @@ public class ServiceService {
                         s.getId(),
                         s.getName(),
                         s.getPrice(),
-                        s.getDurationInMinutes()
+                        s.getDurationInMinutes(),
+                        s.getImageUrl()
                 ));
     }
 
@@ -121,7 +126,8 @@ public class ServiceService {
                 service.getId(),
                 service.getName(),
                 service.getPrice(),
-                service.getDurationInMinutes()
+                service.getDurationInMinutes(),
+                service.getImageUrl()
         );
     }
 }

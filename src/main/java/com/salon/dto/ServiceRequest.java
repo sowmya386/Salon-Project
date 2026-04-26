@@ -17,6 +17,8 @@ public class ServiceRequest {
     @Positive(message = "Duration must be positive")
     private Integer durationInMinutes;
 
+    private String imageUrl;
+
     public String getName() {
         return name;
     }
@@ -39,5 +41,13 @@ public class ServiceRequest {
 
     public void setDurationInMinutes(Integer durationInMinutes) {
         this.durationInMinutes = durationInMinutes;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 }

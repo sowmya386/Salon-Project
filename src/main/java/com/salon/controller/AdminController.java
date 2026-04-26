@@ -84,6 +84,13 @@ public class AdminController {
         return ResponseEntity.ok(userService.getSalonCustomers(pageable));
     }
 
+    @PutMapping("/salon-settings")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<com.salon.entity.Salon> updateSalonSettings(
+            @Valid @RequestBody com.salon.dto.SalonSettingsRequest request) {
+        return ResponseEntity.ok(salonService.updateSalonSettings(request));
+    }
+
 
     // ADMIN creates service
     @PostMapping("/services")

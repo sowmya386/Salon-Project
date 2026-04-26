@@ -36,6 +36,7 @@ public class ProductService {
         product.setDescription(request.getDescription());
         product.setPrice(request.getPrice());
         product.setStock(request.getStock());
+        product.setImageUrl(request.getImageUrl());
         product.setSalonName(salon.getName());
 
         product = productRepository.save(product);
@@ -45,7 +46,8 @@ public class ProductService {
                 product.getName(),
                 product.getDescription(),
                 product.getPrice(),
-                product.getStock()
+                product.getStock(),
+                product.getImageUrl()
         );
     }
 
@@ -58,8 +60,9 @@ public class ProductService {
         product.setDescription(request.getDescription());
         product.setPrice(request.getPrice());
         product.setStock(request.getStock());
+        product.setImageUrl(request.getImageUrl());
         product = productRepository.save(product);
-        return new ProductResponse(product.getId(), product.getName(), product.getDescription(), product.getPrice(), product.getStock());
+        return new ProductResponse(product.getId(), product.getName(), product.getDescription(), product.getPrice(), product.getStock(), product.getImageUrl());
     }
 
     // CUSTOMER + ADMIN
@@ -74,7 +77,8 @@ public class ProductService {
                         p.getName(),
                         p.getDescription(),
                         p.getPrice(),
-                        p.getStock()
+                        p.getStock(),
+                        p.getImageUrl()
                 ));
     }
 
@@ -98,7 +102,8 @@ public class ProductService {
                 product.getName(),
                 product.getDescription(),
                 product.getPrice(),
-                product.getStock()
+                product.getStock(),
+                product.getImageUrl()
         );
     }
 }
