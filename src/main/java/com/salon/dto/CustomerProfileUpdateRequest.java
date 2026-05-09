@@ -14,14 +14,16 @@ public class CustomerProfileUpdateRequest {
     private String phone;
 
     private String homeAddress;
+    private String pincode;
     private String profileImageUrl;
 
     public CustomerProfileUpdateRequest() {}
 
-    public CustomerProfileUpdateRequest(String fullName, String phone, String homeAddress, String profileImageUrl) {
+    public CustomerProfileUpdateRequest(String fullName, String phone, String homeAddress, String pincode, String profileImageUrl) {
         this.fullName = fullName;
         this.phone = phone;
         this.homeAddress = homeAddress;
+        this.pincode = pincode;
         this.profileImageUrl = profileImageUrl;
     }
 
@@ -43,6 +45,9 @@ public class CustomerProfileUpdateRequest {
 
     public String getHomeAddress() { return homeAddress; }
     public void setHomeAddress(String homeAddress) { this.homeAddress = homeAddress; }
+
+    public String getPincode() { return pincode; }
+    public void setPincode(String pincode) { this.pincode = pincode; }
 
     public String getProfileImageUrl() { return profileImageUrl; }
     public void setProfileImageUrl(String profileImageUrl) { this.profileImageUrl = profileImageUrl; }

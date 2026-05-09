@@ -71,6 +71,7 @@ public class CustomerController {
                         customer.getPhone(),
                         customer.getSalonName(),
                         customer.getHomeAddress(),
+                        customer.getPincode(),
                         customer.getProfileImageUrl()
                 );
 
@@ -93,6 +94,7 @@ public class CustomerController {
                         customer.getPhone(),
                         customer.getSalonName(),
                         customer.getHomeAddress(),
+                        customer.getPincode(),
                         customer.getProfileImageUrl()
                 );
 
@@ -131,10 +133,11 @@ public class CustomerController {
     @PutMapping("/bookings/{bookingId}/cancel")
     @PreAuthorize("hasRole('CUSTOMER')")
     public ResponseEntity<BookingResponse> cancelMyBooking(
-            @PathVariable Long bookingId) {
+            @PathVariable Long bookingId,
+            @RequestParam(required = false) String reason) {
 
         return ResponseEntity.ok(
-                bookingService.cancelBookingByCustomer(bookingId)
+                bookingService.cancelBookingByCustomer(bookingId, reason)
         );
     }
     

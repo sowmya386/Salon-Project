@@ -22,9 +22,13 @@ public class Booking {
     private User customer;
 
     // what is booked
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "service_id", nullable = false)
-    private Service service;
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "booking_services",
+        joinColumns = @JoinColumn(name = "booking_id"),
+        inverseJoinColumns = @JoinColumn(name = "service_id")
+    )
+    private java.util.List<Service> services;
 
     // tenant boundary
     @Column(name = "salon_name", nullable = false)
@@ -60,12 +64,12 @@ public class Booking {
         this.customer = customer;
     }
 
-    public Service getService() {
-        return service;
+    public java.util.List<Service> getServices() {
+        return services;
     }
 
-    public void setService(Service service) {
-        this.service = service;
+    public void setServices(java.util.List<Service> services) {
+        this.services = services;
     }
 
     public String getSalonName() {

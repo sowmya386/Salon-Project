@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 public class BookingResponse {
 
     private Long bookingId;
-    private String serviceName;
+    private java.util.List<String> serviceNames;
     private String customerName;
     private LocalDateTime appointmentTime;
     private BookingStatus status;
@@ -15,7 +15,7 @@ public class BookingResponse {
     private String salonName;
 
     public BookingResponse(Long bookingId,
-                           String serviceName,
+                           java.util.List<String> serviceNames,
                            String customerName,
                            LocalDateTime appointmentTime,
                            BookingStatus status,
@@ -23,7 +23,7 @@ public class BookingResponse {
                            String cancellationMessage,
                            String salonName) {
         this.bookingId = bookingId;
-        this.serviceName = serviceName;
+        this.serviceNames = serviceNames;
         this.customerName = customerName;
         this.appointmentTime = appointmentTime;
         this.status = status;
@@ -33,7 +33,7 @@ public class BookingResponse {
     }
 
     public Long getBookingId() { return bookingId; }
-    public String getServiceName() { return serviceName; }
+    public java.util.List<String> getServiceNames() { return serviceNames; }
     public String getCustomerName() { return customerName; }
     public LocalDateTime getAppointmentTime() { return appointmentTime; }
     public BookingStatus getStatus() { return status; }

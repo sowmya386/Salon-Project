@@ -72,13 +72,19 @@ public class BookingService {
         User customer = userRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-        Service service = serviceRepository
-                .findByIdAndSalonName(request.getServiceId(), salon.getName())
-                .orElseThrow(() -> new RuntimeException("Service not found in this salon"));
+        java.util.List<Service> services = new java.util.ArrayList<>();
+        double totalServicePrice = 0.0;
+        for (Long serviceId : request.getServiceIds()) {
+            Service service = serviceRepository
+                    .findByIdAndSalonName(serviceId, salon.getName())
+                    .orElseThrow(() -> new RuntimeException("Service not found in this salon: " + serviceId));
+            services.add(service);
+            totalServicePrice += service.getPrice();
+        }
 
         Booking booking = new Booking();
         booking.setCustomer(customer);
-        booking.setService(service);
+        booking.setServices(services);
         booking.setSalonName(salon.getName());
         booking.setAppointmentTime(request.getAppointmentTime());
         booking.setAddress(request.getAddress());
@@ -109,7 +115,7 @@ public class BookingService {
             userRepository.save(customer);
         }
 
-        double finalPrice = service.getPrice() - discount;
+        double finalPrice = totalServicePrice - discount;
         if (finalPrice < 0) finalPrice = 0;
 
         // Auto-generate invoice for prepaid transactions
@@ -128,21 +134,22 @@ public class BookingService {
             }
             invoice.setCustomer(customer);
             invoice.setBooking(booking);
-            invoice.setSubtotal(service.getPrice());
+            invoice.setSubtotal(totalServicePrice);
             invoice.setDiscount(discount);
             invoice.setTotalAmount(finalPrice);
             
             invoice = invoiceRepository.save(invoice);
             
-            InvoiceItem item = new InvoiceItem();
-            item.setInvoice(invoice);
-            item.setItemName(service.getName());
-            item.setPrice(service.getPrice());
-            item.setQuantity(1);
-            item.setAmount(service.getPrice());
-            item.setItemType(ItemType.SERVICE);
-            
-            invoiceItemRepository.save(item);
+            for (Service s : services) {
+                InvoiceItem item = new InvoiceItem();
+                item.setInvoice(invoice);
+                item.setItemName(s.getName());
+                item.setPrice(s.getPrice());
+                item.setQuantity(1);
+                item.setAmount(s.getPrice());
+                item.setItemType(ItemType.SERVICE);
+                invoiceItemRepository.save(item);
+            }
             
             auditLogService.log(
                 AuditAction.CREATE_INVOICE,
@@ -205,7 +212,7 @@ public class BookingService {
     }
 
     // ================= CUSTOMER — CANCEL =================
-    public BookingResponse cancelBookingByCustomer(Long bookingId) {
+    public BookingResponse cancelBookingByCustomer(Long bookingId, String reason) {
 
         Long customerId = SecurityUtil.getCurrentUserId();
         String salonName = salonService.getCurrentSalon().getName();
@@ -223,7 +230,7 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
-        booking.setCancellationMessage("Cancelled by Customer");
+        booking.setCancellationMessage(reason != null && !reason.trim().isEmpty() ? reason : "Cancelled by Customer");
         bookingRepository.save(booking);
 
         auditLogService.log(
@@ -295,7 +302,7 @@ public class BookingService {
     private BookingResponse mapToResponse(Booking booking) {
         return new BookingResponse(
                 booking.getId(),
-                booking.getService().getName(),
+                booking.getServices().stream().map(Service::getName).toList(),
                 booking.getCustomer().getFullName(),
                 booking.getAppointmentTime(),
                 booking.getStatus(),

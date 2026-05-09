@@ -63,6 +63,9 @@ public class User {
         @Column(columnDefinition = "TEXT")
         private String homeAddress;
 
+        @Column
+        private String pincode;
+
         @Column(columnDefinition = "TEXT")
         private String profileImageUrl;
 
@@ -172,6 +175,9 @@ public class User {
 
     public String getHomeAddress() { return homeAddress; }
     public void setHomeAddress(String homeAddress) { this.homeAddress = homeAddress; }
+
+    public String getPincode() { return pincode; }
+    public void setPincode(String pincode) { this.pincode = pincode; }
 
     public String getProfileImageUrl() { return profileImageUrl; }
     public void setProfileImageUrl(String profileImageUrl) { this.profileImageUrl = profileImageUrl; }

@@ -39,14 +39,16 @@ public class BookingController {
     @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN')")
     public ResponseEntity<BookingResponse> cancelBooking(
             @PathVariable Long bookingId,
+            @RequestBody(required = false) java.util.Map<String, String> payload,
             Authentication authentication) {
 
         String role = authentication.getAuthorities().iterator().next().getAuthority();
+        String msg = payload != null ? payload.get("reason") : null;
 
         if (role.equals("ROLE_ADMIN")) {
-            return ResponseEntity.ok(bookingService.cancelBookingByAdmin(bookingId, null));
+            return ResponseEntity.ok(bookingService.cancelBookingByAdmin(bookingId, msg));
         } else {
-            return ResponseEntity.ok(bookingService.cancelBookingByCustomer(bookingId));
+            return ResponseEntity.ok(bookingService.cancelBookingByCustomer(bookingId, msg));
         }
     }
       

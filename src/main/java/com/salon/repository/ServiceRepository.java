@@ -22,13 +22,14 @@ public interface ServiceRepository extends JpaRepository<Service, Long> {
     // ================= TOP SERVICES (DASHBOARD) =================
     @Query("""
     	    SELECT new com.salon.dto.TopItemResponse(
-    	        b.service.name,
+    	        s.name,
     	        COUNT(b)
     	    )
     	    FROM Booking b
+    	    JOIN b.services s
     	    WHERE b.salonName = :salonName
     	      AND b.status = 'COMPLETED'
-    	    GROUP BY b.service.name
+    	    GROUP BY s.name
     	    ORDER BY COUNT(b) DESC
     	""")
     	List<TopItemResponse> findTopServices(@org.springframework.data.repository.query.Param("salonName") String salonName);

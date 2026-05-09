@@ -8,6 +8,7 @@ public class CustomerProfileResponse {
     private String phone;
     private String salonName;
     private String homeAddress;
+    private String pincode;
     private String profileImageUrl;
 
     public CustomerProfileResponse(Long id,
@@ -16,6 +17,7 @@ public class CustomerProfileResponse {
                                    String phone,
                                    String salonName,
                                    String homeAddress,
+                                   String pincode,
                                    String profileImageUrl) {
         this.id = id;
         this.fullName = fullName;
@@ -23,6 +25,7 @@ public class CustomerProfileResponse {
         this.phone = phone;
         this.salonName = salonName;
         this.homeAddress = homeAddress;
+        this.pincode = pincode;
         this.profileImageUrl = profileImageUrl;
     }
 
@@ -32,5 +35,6 @@ public class CustomerProfileResponse {
     public String getPhone() { return phone; }
     public String getSalonName() { return salonName; }
     public String getHomeAddress() { return homeAddress; }
+    public String getPincode() { return pincode; }
     public String getProfileImageUrl() { return profileImageUrl; }
 }

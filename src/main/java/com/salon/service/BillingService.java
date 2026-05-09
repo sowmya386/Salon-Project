@@ -178,6 +178,13 @@ public class BillingService {
         invoice.setSalonName(salonName);
         invoice.setCustomer(customer);  
         
+        // Update customer's address and pincode from checkout
+        if (request.getAddress() != null && !request.getAddress().trim().isEmpty()) {
+            customer.setHomeAddress(request.getAddress());
+            customer.setPincode(request.getPincode());
+            userRepository.save(customer);
+        }
+        
         String payMethod = request.getPaymentMethod();
         try {
             if (payMethod.equalsIgnoreCase("Google Pay")) invoice.setPaymentMode(PaymentMode.UPI);

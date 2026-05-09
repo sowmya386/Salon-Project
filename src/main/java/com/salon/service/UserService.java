@@ -239,16 +239,16 @@ public class UserService {
         String salonName = com.salon.security.SecurityUtil.getCurrentSalonName();
         return userRepository.findCustomersBySalonName(salonName, pageable)
                 .map(c -> new com.salon.dto.CustomerProfileResponse(
-                        c.getId(), c.getFullName(), c.getEmail(), c.getPhone(), c.getSalonName(), c.getHomeAddress(), c.getProfileImageUrl()
+                        c.getId(), c.getFullName(), c.getEmail(), c.getPhone(), c.getSalonName(), c.getHomeAddress(), c.getPincode(), c.getProfileImageUrl()
                 ));
     }
 
-    // ================= CUSTOMER UPDATES PROFILE =================
     public User updateCustomerProfile(Long userId, com.salon.dto.CustomerProfileUpdateRequest request) {
         User customer = getUserById(userId);
         customer.setFullName(request.getFullName());
         customer.setPhone(request.getPhone());
         customer.setHomeAddress(request.getHomeAddress());
+        customer.setPincode(request.getPincode());
         customer.setProfileImageUrl(request.getProfileImageUrl());
         return userRepository.save(customer);
     }
@@ -257,7 +257,7 @@ public class UserService {
         String salonName = com.salon.security.SecurityUtil.getCurrentSalonName();
         return userRepository.findPendingAdminsBySalonName(salonName)
             .stream()
-            .map(u -> new com.salon.dto.CustomerProfileResponse(u.getId(), u.getFullName(), u.getEmail(), u.getPhone(), u.getSalonName(), null, null))
+            .map(u -> new com.salon.dto.CustomerProfileResponse(u.getId(), u.getFullName(), u.getEmail(), u.getPhone(), u.getSalonName(), null, null, null))
             .collect(java.util.stream.Collectors.toList());
     }
 

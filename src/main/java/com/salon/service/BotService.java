@@ -85,7 +85,7 @@ public class BotService {
 
             return new BotResponse(
                     "Your latest booking:\n" +
-                    "Service: " + next.getService().getName() + "\n" +
+                    "Service: " + next.getServices().stream().map(com.salon.entity.Service::getName).collect(java.util.stream.Collectors.joining(", ")) + "\n" +
                     "Time: " + next.getAppointmentTime() + "\n" +
                     "Status: " + next.getStatus()
             );
@@ -98,7 +98,7 @@ public class BotService {
         // 👇 ADMIN ONLY COMMANDS
         if (isAdmin && (lower.contains("revenue") || lower.contains("dashboard") || lower.contains("summary") || lower.contains("report"))) {
             try {
-                DashboardSummaryResponse summary = dashboardService.getSummary();
+                DashboardSummaryResponse summary = dashboardService.getSummary("week");
                 return new BotResponse(
                     "Good day, Administrator.\nHere is your requested formal business summary for **" + salonName + "**:\n\n" +
                     "• **Total Revenue (Last 7 Days):** ₹" + summary.getTotalRevenue() + "\n" +

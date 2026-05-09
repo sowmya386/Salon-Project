@@ -6,18 +6,18 @@ import jakarta.validation.constraints.NotNull;
 
 public class BookingRequest {
 
-	@NotNull(message = "ServiceId is required")
-    private Long serviceId;
+    @NotNull(message = "ServiceIds are required")
+    private java.util.List<Long> serviceIds;
 
     @NotNull(message = "Appointment time is required")
     private LocalDateTime appointmentTime;
 
-    public Long getServiceId() {
-        return serviceId;
+    public java.util.List<Long> getServiceIds() {
+        return serviceIds;
     }
 
-    public void setServiceId(Long serviceId) {
-        this.serviceId = serviceId;
+    public void setServiceIds(java.util.List<Long> serviceIds) {
+        this.serviceIds = serviceIds;
     }
 
     public LocalDateTime getAppointmentTime() {

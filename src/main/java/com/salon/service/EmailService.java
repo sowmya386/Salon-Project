@@ -32,7 +32,7 @@ public class EmailService {
 
         String body = String.format("Hi %s,\n\nYour booking for '%s' on %s has been confirmed!\n\nThank you for choosing %s.",
                 booking.getCustomer().getFullName(),
-                booking.getService().getName(),
+                booking.getServices().stream().map(com.salon.entity.Service::getName).collect(java.util.stream.Collectors.joining(", ")),
                 formattedDate,
                 booking.getSalonName());
 
@@ -48,7 +48,7 @@ public class EmailService {
 
         String body = String.format("Hi %s,\n\nYour booking for '%s' on %s has been cancelled.\n\nReason: %s\n\nWe apologize for any inconvenience.",
                 booking.getCustomer().getFullName(),
-                booking.getService().getName(),
+                booking.getServices().stream().map(com.salon.entity.Service::getName).collect(java.util.stream.Collectors.joining(", ")),
                 formattedDate,
                 booking.getCancellationMessage() != null ? booking.getCancellationMessage() : "No reason provided.");
 

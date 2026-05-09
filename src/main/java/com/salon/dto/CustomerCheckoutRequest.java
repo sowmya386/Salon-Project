@@ -12,6 +12,9 @@ public class CustomerCheckoutRequest {
     @NotNull(message = "Address is required")
     private String address;
 
+    @NotNull(message = "Pincode is required")
+    private String pincode;
+
     @NotNull(message = "Payment method is required")
     private String paymentMethod;
 
@@ -29,6 +32,14 @@ public class CustomerCheckoutRequest {
 
     public void setAddress(String address) {
         this.address = address;
+    }
+
+    public String getPincode() {
+        return pincode;
+    }
+
+    public void setPincode(String pincode) {
+        this.pincode = pincode;
     }
 
     public String getPaymentMethod() {

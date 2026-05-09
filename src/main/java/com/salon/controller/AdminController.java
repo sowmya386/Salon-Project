@@ -218,8 +218,9 @@ public class AdminController {
     }
     @GetMapping("/dashboard/summary")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<DashboardSummaryResponse> getDashboardSummary() {
-        return ResponseEntity.ok(dashboardService.getSummary());
+    public ResponseEntity<DashboardSummaryResponse> getDashboardSummary(
+            @RequestParam(required = false, defaultValue = "week") String filter) {
+        return ResponseEntity.ok(dashboardService.getSummary(filter));
     }
 
     @GetMapping("/dashboard/top-products")
